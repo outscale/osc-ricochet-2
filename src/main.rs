@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Method, StatusCode};
+use outscale_api::models::Vm;
 
 fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json["ResponseContext"] = json::JsonValue::new_object();
@@ -31,17 +32,47 @@ async fn handler(req: Request<Body>,
                                                       String::from_utf8(bytes.to_vec()).unwrap(),
                                                       hdr));
         },
-        (&Method::POST, "/ReadVms") => {
+        (&Method::POST, "/ReadVms") | (&Method::POST, "/api/v1/ReadVms") => {
 
+            let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+            let mut query = String::from("SELECT * FROM Vms");
+
+            if !bytes.is_empty() {
+                println!("pas empty !");
+                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                match in_json {
+                    Ok(in_json) => {
+                        println!("{:?}", in_json);
+                        if in_json.has_key("Filters") {
+                            let filter = &in_json["Filters"];
+                            if filter.has_key("VmIds") {
+                                let mut id = String::from(json::stringify(filter["VmIds"].clone()));
+
+                                id.pop();
+                                id.remove(0);
+                                query.push_str(&format!(" WHERE Id IN ({})", id));
+                                println!("{}", query)
+                            }
+                        }
+                    },
+                    Err(_) => {
+                        json["Error"] = "Invalid JSON format".into();
+                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                        return Ok(response);
+                    }
+                }
+            }
             json["Vms"] = json::JsonValue::new_array();
-
-            let query = "SELECT * FROM Vms";
+            let mut vmo = Vm::new();
             connection
                 .iterate(query, |pairs| {
                     let mut vm = json::JsonValue::new_object();
                     for &(id, t) in pairs.iter() {
                         match id {
-                            "Id" => vm["VmId"] = t.unwrap().into(),
+                            "Id" => {
+                                vm["VmId"] = t.unwrap().into();
+                                vmo.vm_id = Some(t.unwrap().into());
+                            },
                             "VmType" => vm["VmType"] = t.unwrap().into(),
                             _ => println!("{} not a Vm element", id),
                         }
@@ -49,11 +80,12 @@ async fn handler(req: Request<Body>,
                     json["Vms"].push(vm).unwrap();
                     true
                 }).unwrap();
+            println!("read_responce: {:?}", serde_json::to_string(&vmo).unwrap());
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
-        (&Method::POST, "/CreateVms") => {
+        (&Method::POST, "/CreateVms") | (&Method::POST, "/api/v1/CreateVms") => {
             let query = format!("
-INSERT INTO Vms VALUES ('i-{}', 'small');
+INSERT INTO Vms VALUES ('i-{:08}', 'small');
 ", req_id);
             connection.execute(query).unwrap();
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
