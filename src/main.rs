@@ -14,6 +14,21 @@ fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json::stringify_pretty(json, 3)
 }
 
+fn request_filter_add(filter: & json::JsonValue, req: &mut String, need_and: &mut bool, lookfor: & str, src: & str) {
+    if filter.has_key(lookfor) {
+        let mut id = String::from(json::stringify(filter[lookfor].clone()));
+
+        id.pop();
+        id.remove(0);
+        if *need_and {
+            req.push_str(" AND")
+        }
+        req.push_str(&format!(" WHERE {} IN ({})", src, id));
+        *need_and = true;
+        println!("{}", req)
+    }
+}
+
 // , connection: sqlite::Connection , connection: & sqlite::ConnectionWithFullMutex
 async fn handler(req: Request<Body>,
                  connection: & sqlite::ConnectionWithFullMutex,
@@ -42,17 +57,14 @@ async fn handler(req: Request<Body>,
                 let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                 match in_json {
                     Ok(in_json) => {
+                        let mut need_and = false;
                         println!("{:?}", in_json);
                         if in_json.has_key("Filters") {
                             let filter = &in_json["Filters"];
-                            if filter.has_key("VmIds") {
-                                let mut id = String::from(json::stringify(filter["VmIds"].clone()));
-
-                                id.pop();
-                                id.remove(0);
-                                query.push_str(&format!(" WHERE Id IN ({})", id));
-                                println!("{}", query)
-                            }
+                            request_filter_add(filter, &mut query, &mut need_and, "VmIds", "Id");
+                            request_filter_add(filter, &mut query,
+                                               &mut need_and, "TagValues", "VmType");
+                            request_filter_add(filter, &mut query, &mut need_and, "TagKeys", "Id");
                         }
                     },
                     Err(_) => {
