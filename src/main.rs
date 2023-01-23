@@ -7,6 +7,7 @@ use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Method, StatusCode};
 use outscale_api::models::Vm;
+use std::str::FromStr;
 
 fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json["ResponseContext"] = json::JsonValue::new_object();
@@ -22,32 +23,75 @@ fn request_filter_add(filter: & json::JsonValue, req: &mut String, need_and: &mu
         id.remove(0);
         if *need_and {
             req.push_str(" AND")
+        } else {
+            req.push_str(" WHERE")
         }
-        req.push_str(&format!(" WHERE {} IN ({})", src, id));
+        req.push_str(&format!(" {} IN ({})", src, id));
         *need_and = true;
         println!("{}", req)
     }
 }
 
-// , connection: sqlite::Connection , connection: & sqlite::ConnectionWithFullMutex
+fn remove_duplicate_slashes(path: &str) -> String {
+    let mut new_path = String::new();
+    let mut last_char = '_';
+    for c in path.chars() {
+        if c == '/' {
+            if last_char != '/' {
+                new_path.push(c);
+            }
+        } else {
+            new_path.push(c);
+        }
+        last_char = c;
+    }
+    new_path
+}
+enum RicCall {
+    Root,
+    ReadVms,
+    Debug,
+    CreateVms
+}
+
+impl FromStr for RicCall {
+    type Err = ();
+    fn from_str(path: &str) -> Result<Self, Self::Err> {
+        println!("{}", path);
+        let ps = remove_duplicate_slashes(path);
+        let p = ps.as_str();
+
+        println!("{}", p);
+        match p {
+            "/" => Ok(RicCall::Root),
+            "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" => Ok(RicCall::ReadVms),
+            "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" => Ok(RicCall::CreateVms),
+            "/debug" => Ok(RicCall::Debug),
+            _ => Err(())
+        }
+    }
+}
+
+// connection: sqlite::Connection , connection: & sqlite::ConnectionWithFullMutex
 async fn handler(req: Request<Body>,
                  connection: & sqlite::ConnectionWithFullMutex,
                  req_id: usize) -> Result<Response<Body>, Infallible> {
     let mut response = Response::new(Body::empty());
     let mut json = json::JsonValue::new_object();
 
-    match (req.method(), req.uri().path()) {
-        (&Method::GET, "/") => {
+    // match (req.method(), req.uri().path())
+    match (req.method(), RicCall::from_str(req.uri().path())) {
+        (&Method::GET, Ok(RicCall::Root)) => {
             *response.body_mut() = Body::from("Try POSTing to /ReadVms");
         },
-        (&Method::POST, "/debug") => {
+        (&Method::POST, Ok(RicCall::Debug)) => {
             let hdr = format!("{:?}", req.headers());
             let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
             *response.body_mut() = Body::from(format!("data: {}\nheaders: {}\n",
                                                       String::from_utf8(bytes.to_vec()).unwrap(),
                                                       hdr));
         },
-        (&Method::POST, "/ReadVms") | (&Method::POST, "/api/v1/ReadVms") => {
+        (&Method::POST, Ok(RicCall::ReadVms))  => {
 
             let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
             let mut query = String::from("SELECT * FROM Vms");
@@ -95,7 +139,7 @@ async fn handler(req: Request<Body>,
             println!("read_responce: {:?}", serde_json::to_string(&vmo).unwrap());
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
-        (&Method::POST, "/CreateVms") | (&Method::POST, "/api/v1/CreateVms") => {
+        (&Method::POST, Ok(RicCall::CreateVms)) => {
             let query = format!("
 INSERT INTO Vms VALUES ('i-{:08}', 'small');
 ", req_id);
