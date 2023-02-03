@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Method, StatusCode};
-use outscale_api::models::Vm;
 use std::str::FromStr;
 
 fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
@@ -51,7 +50,9 @@ enum RicCall {
     Root,
     ReadVms,
     Debug,
-    CreateVms
+    CreateVms,
+    CreateTags,
+    CreateFlexibleGpu
 }
 
 impl FromStr for RicCall {
@@ -66,6 +67,8 @@ impl FromStr for RicCall {
             "/" => Ok(RicCall::Root),
             "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" => Ok(RicCall::ReadVms),
             "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" => Ok(RicCall::CreateVms),
+            "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" => Ok(RicCall::CreateTags),
+            "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" => Ok(RicCall::CreateFlexibleGpu),
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
@@ -119,7 +122,6 @@ async fn handler(req: Request<Body>,
                 }
             }
             json["Vms"] = json::JsonValue::new_array();
-            let mut vmo = Vm::new();
             connection
                 .iterate(query, |pairs| {
                     let mut vm = json::JsonValue::new_object();
@@ -127,7 +129,6 @@ async fn handler(req: Request<Body>,
                         match id {
                             "Id" => {
                                 vm["VmId"] = t.unwrap().into();
-                                vmo.vm_id = Some(t.unwrap().into());
                             },
                             "VmType" => vm["VmType"] = t.unwrap().into(),
                             _ => println!("{} not a Vm element", id),
@@ -136,7 +137,6 @@ async fn handler(req: Request<Body>,
                     json["Vms"].push(vm).unwrap();
                     true
                 }).unwrap();
-            println!("read_responce: {:?}", serde_json::to_string(&vmo).unwrap());
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
         (&Method::POST, Ok(RicCall::CreateVms)) => {
@@ -146,9 +146,45 @@ INSERT INTO Vms VALUES ('i-{:08}', 'small');
             connection.execute(query).unwrap();
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
-        _ => {
-            *response.status_mut() = StatusCode::NOT_FOUND;
+        (&Method::POST, Ok(RicCall::CreateTags)) => {
+            let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+
+            if !bytes.is_empty() {
+                println!("pas empty !");
+                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                match in_json {
+                    Ok(in_json) => {
+                        println!("{:#}", in_json.dump());
+                    },
+                    Err(_) => {
+                        json["Error"] = "Invalid JSON format".into();
+                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                        return Ok(response);
+                    }
+                }
+            }
+            println!("CreateTags");
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
+        (&Method::POST, Ok(RicCall::CreateFlexibleGpu)) => {
+            let fgpu_json = json::object!{
+                DeleteOnVmDeletion: false,
+                FlexibleGpuId: format!("fgpu-{:08}", req_id),
+                Generation: "Wololo",
+                ModelName: "XOXO",
+                State: "imaginary",
+                SubregionName: "yes",
+                VmId: "unlink"
+            };
+
+
+            println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
+            json["FlexibleGpu"] = fgpu_json;
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
+       _ => {
+            *response.status_mut() = StatusCode::NOT_FOUND;
+       },
     };
 
     Ok(response)
