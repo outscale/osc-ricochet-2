@@ -201,6 +201,10 @@ async fn main() {
     CREATE TABLE Vms (Id TEXT, VmType TEXT);
 ";
     connection.execute(query).unwrap();
+    let query = "
+    CREATE TABLE fGPU (Id TEXT, jsons TEXT);
+";
+    connection.execute(query).unwrap();
     // We'll bind to 127.0.0.1:3000
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
