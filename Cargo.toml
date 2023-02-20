@@ -8,5 +8,4 @@ edition = "2021"
 hyper = { version = "0.14", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
-sqlite = "0.30"
 json = "0.12.4"

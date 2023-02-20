@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::string::String;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use futures::lock::Mutex;
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Method, StatusCode};
@@ -14,20 +15,22 @@ fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json::stringify_pretty(json, 3)
 }
 
-fn request_filter_add(filter: & json::JsonValue, req: &mut String, need_and: &mut bool, lookfor: & str, src: & str) {
-    if filter.has_key(lookfor) {
-        let mut id = String::from(json::stringify(filter[lookfor].clone()));
+fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
+                       lookfor: & str, src: & str, old: bool) -> bool {
+    if !old {
+        return false;
+    }
 
-        id.pop();
-        id.remove(0);
-        if *need_and {
-            req.push_str(" AND")
-        } else {
-            req.push_str(" WHERE")
+    if filter.has_key(lookfor) {
+
+        for l in filter[lookfor].members() {
+            if vm.has_key(src) && vm[src] == *l {
+                return true;
+            }
         }
-        req.push_str(&format!(" {} IN ({})", src, id));
-        *need_and = true;
-        println!("{}", req)
+        false
+    } else {
+        true
     }
 }
 
@@ -77,10 +80,12 @@ impl FromStr for RicCall {
 
 // connection: sqlite::Connection , connection: & sqlite::ConnectionWithFullMutex
 async fn handler(req: Request<Body>,
-                 connection: & sqlite::ConnectionWithFullMutex,
+                 connection: & Arc<futures::lock::Mutex<json::JsonValue>>,
                  req_id: usize) -> Result<Response<Body>, Infallible> {
     let mut response = Response::new(Body::empty());
     let mut json = json::JsonValue::new_object();
+    let mut main_json = connection.lock().await;
+    let user_id = 0;
 
     // match (req.method(), req.uri().path())
     match (req.method(), RicCall::from_str(req.uri().path())) {
@@ -97,21 +102,32 @@ async fn handler(req: Request<Body>,
         (&Method::POST, Ok(RicCall::ReadVms))  => {
 
             let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
-            let mut query = String::from("SELECT * FROM Vms");
+            let user_vms = &main_json[user_id]["Vms"];
+
+            json["Vms"] = (*user_vms).clone();
 
             if !bytes.is_empty() {
-                println!("pas empty !");
                 let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                 match in_json {
                     Ok(in_json) => {
-                        let mut need_and = false;
-                        println!("{:?}", in_json);
                         if in_json.has_key("Filters") {
                             let filter = &in_json["Filters"];
-                            request_filter_add(filter, &mut query, &mut need_and, "VmIds", "Id");
-                            request_filter_add(filter, &mut query,
-                                               &mut need_and, "TagValues", "VmType");
-                            request_filter_add(filter, &mut query, &mut need_and, "TagKeys", "Id");
+
+                            json["Vms"] = json::JsonValue::new_array();
+
+                            for vm in user_vms.members() {
+                                let mut need_add = true;
+
+                                need_add = have_request_filter(filter, vm,
+                                                               "VmIds", "VmId", need_add);
+                                need_add = have_request_filter(filter, vm,
+                                                               "TagValues", "VmType", need_add);
+                                need_add = have_request_filter(filter, vm,
+                                                               "TagKeys", "VmId", need_add);
+                                if need_add {
+                                    json["Vms"].push((*vm).clone()).unwrap();
+                                }
+                            }
                         }
                     },
                     Err(_) => {
@@ -121,29 +137,15 @@ async fn handler(req: Request<Body>,
                     }
                 }
             }
-            json["Vms"] = json::JsonValue::new_array();
-            connection
-                .iterate(query, |pairs| {
-                    let mut vm = json::JsonValue::new_object();
-                    for &(id, t) in pairs.iter() {
-                        match id {
-                            "Id" => {
-                                vm["VmId"] = t.unwrap().into();
-                            },
-                            "VmType" => vm["VmType"] = t.unwrap().into(),
-                            _ => println!("{} not a Vm element", id),
-                        }
-                    }
-                    json["Vms"].push(vm).unwrap();
-                    true
-                }).unwrap();
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
         (&Method::POST, Ok(RicCall::CreateVms)) => {
-            let query = format!("
-INSERT INTO Vms VALUES ('i-{:08}', 'small');
-", req_id);
-            connection.execute(query).unwrap();
+            let vm_id = format!("i-{:08}", req_id);
+            main_json[user_id]["Vms"].push(
+                json::object!{
+                    VmType: "small",
+                    VmId: vm_id
+                }).unwrap();
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
         (&Method::POST, Ok(RicCall::CreateTags)) => {
@@ -194,17 +196,15 @@ INSERT INTO Vms VALUES ('i-{:08}', 'small');
 async fn main() {
     println!("Hello World!");
 
-    let connection = sqlite::Connection::open_with_full_mutex(":memory:").unwrap();
+    let mut connection = json::JsonValue::new_array();
+    connection[0] = json::object!{
+        Vms: json::JsonValue::new_array(),
+        FlexibleGpu: json::JsonValue::new_array()
+    };
+    let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
     let requet_id = Arc::new(AtomicUsize::new(0));
-    let query = "
-    CREATE TABLE Vms (Id TEXT, VmType TEXT);
-";
-    connection.execute(query).unwrap();
-    let query = "
-    CREATE TABLE fGPU (Id TEXT, jsons TEXT);
-";
-    connection.execute(query).unwrap();
+
     // We'll bind to 127.0.0.1:3000
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
