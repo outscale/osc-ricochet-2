@@ -224,10 +224,6 @@ async fn main() {
         }))
      }
     });
-    /*let make_svc = make_service_fn(|_conn| async {
-        // service_fn converts our function into a `Service`
-        Ok::<_, Infallible>(service_fn(handler))
-    });*/
 
     let server = Server::bind(&addr).serve(make_svc);
 
