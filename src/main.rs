@@ -95,9 +95,10 @@ async fn handler(req: Request<Body>,
     let mut main_json = connection.lock().await;
     let cfg = cfg.lock().await;
     let headers = req.headers();
-    let user_id = 0;
+    let mut user_id = 0;
 
     if cfg["auth_type"] != "none" {
+        let users = &cfg["users"];
         let userpass = match headers.get("Authorization") {
             Some(auth) => {
                 println!("{}", auth.to_str().unwrap());
@@ -106,6 +107,7 @@ async fn handler(req: Request<Body>,
             _ =>  {
                 println!("Authorization not found");
                 response.headers_mut().append("WWW-Authenticate", "Basic".parse().unwrap());
+                *response.body_mut() = Body::from("\"Authorization Header require\"");
                 *response.status_mut() = StatusCode::UNAUTHORIZED;
                 return Ok(response)
             }
@@ -115,8 +117,20 @@ async fn handler(req: Request<Body>,
             let based = userpass.strip_prefix("Basic ").unwrap();
             let decoded = general_purpose::STANDARD
                 .decode(based).unwrap();
-            let stringified = std::str::from_utf8(&decoded);
-            println!("{:?}", stringified);
+            let stringified = std::str::from_utf8(&decoded).unwrap();
+            let tupeled = stringified.split_once(":").unwrap();
+
+            println!("{}", stringified);
+            println!("{} - {}", tupeled.0, tupeled.1);
+            match users.members().position(|u| u["login"] == tupeled.0) {
+                Some(idx) => user_id = idx,
+                _ => {
+                    *response.status_mut() = StatusCode::UNAUTHORIZED;
+                    *response.body_mut() = Body::from("\"Unknow user\"");
+                    return Ok(response)
+                }
+            }
+            println!("{:?}", user_id);
         }
     }
 
@@ -282,19 +296,23 @@ async fn main() {
         Err(error) => {
             println!("error opening {}: {}, Defaulting to no auth\n", usr_cfg_path, error);
             json::object!{
-                auth_type: "none"
+                auth_type: "none",
+                // user is osef tier, with none, but we need at last one fake for below iteration
+                users: [{}]
             }
         }
     };
     println!("{:#}", cfg.dump());
-    let cfg = Arc::new(Mutex::new(cfg));
     let mut connection = json::JsonValue::new_array();
-    connection[0] = json::object!{
-        Vms: json::JsonValue::new_array(),
-        FlexibleGpus: json::JsonValue::new_array()
-    };
+    for _m in cfg["users"].members() {
+        connection.push(json::object!{
+            Vms: json::JsonValue::new_array(),
+            FlexibleGpus: json::JsonValue::new_array()
+        }).unwrap();
+    }
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
+    let cfg = Arc::new(Mutex::new(cfg));
     let requet_id = Arc::new(AtomicUsize::new(0));
 
     // We'll bind to 127.0.0.1:3000
