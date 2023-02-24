@@ -1,0 +1,13 @@
+{
+    "auth_type": "exist",
+    "users": [
+	{
+	    "login": "joe",
+	    "pass": "ashita wa dochida"
+	},
+	{
+	    "login": "titi",
+	    "pass": "toto"
+	}
+    ]
+}
