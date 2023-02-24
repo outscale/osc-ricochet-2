@@ -211,11 +211,14 @@ async fn handler(req: Request<Body>,
                 },
         (&Method::POST, Ok(RicCall::CreateVms)) => {
             let vm_id = format!("i-{:08}", req_id);
-            main_json[user_id]["Vms"].push(
-                json::object!{
+            let vm = json::object!{
                     VmType: "small",
                     VmId: vm_id
-                }).unwrap();
+                };
+
+            main_json[user_id]["Vms"].push(
+                vm.clone()).unwrap();
+            json["Vms"] = json::array!{vm};
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
         (&Method::POST, Ok(RicCall::CreateTags)) => {
@@ -268,6 +271,23 @@ async fn handler(req: Request<Body>,
 async fn main() {
     println!("Hello World!");
 
+    let args: Vec<String> = env::args().collect();
+    let usr_cfg_path = match args.len()  {
+        2 => args[1].clone(),
+        _ => format!("{}/.osc/ricochet.json",
+                     env::var("HOME").unwrap())
+    };
+    let cfg = match fs::read_to_string(&usr_cfg_path) {
+        Ok(users) => json::parse(users.as_str()).unwrap(),
+        Err(error) => {
+            println!("error opening {}: {}, Defaulting to no auth\n", usr_cfg_path, error);
+            json::object!{
+                auth_type: "none"
+            }
+        }
+    };
+    println!("{:#}", cfg.dump());
+    let cfg = Arc::new(Mutex::new(cfg));
     let mut connection = json::JsonValue::new_array();
     connection[0] = json::object!{
         Vms: json::JsonValue::new_array(),
