@@ -1,3 +1,4 @@
+use std::env;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -7,7 +8,10 @@ use futures::lock::Mutex;
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Method, StatusCode};
+use base64::{engine::general_purpose, Engine as _};
+//use hyper::header::{Headers, Authorization};
 use std::str::FromStr;
+use std::fs;
 
 fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json["ResponseContext"] = json::JsonValue::new_object();
@@ -51,11 +55,12 @@ fn remove_duplicate_slashes(path: &str) -> String {
 }
 enum RicCall {
     Root,
-    ReadVms,
     Debug,
     CreateVms,
+    ReadVms,
     CreateTags,
-    CreateFlexibleGpu
+    CreateFlexibleGpu,
+    ReadFlexibleGpus
 }
 
 impl FromStr for RicCall {
@@ -70,6 +75,7 @@ impl FromStr for RicCall {
             "/" => Ok(RicCall::Root),
             "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" => Ok(RicCall::ReadVms),
             "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" => Ok(RicCall::CreateVms),
+            "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" => Ok(RicCall::ReadFlexibleGpus),
             "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" => Ok(RicCall::CreateTags),
             "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" => Ok(RicCall::CreateFlexibleGpu),
             "/debug" => Ok(RicCall::Debug),
@@ -81,11 +87,38 @@ impl FromStr for RicCall {
 // connection: sqlite::Connection , connection: & sqlite::ConnectionWithFullMutex
 async fn handler(req: Request<Body>,
                  connection: & Arc<futures::lock::Mutex<json::JsonValue>>,
-                 req_id: usize) -> Result<Response<Body>, Infallible> {
+                 req_id: usize,
+                 cfg: & Arc<futures::lock::Mutex<json::JsonValue>>)
+                 -> Result<Response<Body>, Infallible> {
     let mut response = Response::new(Body::empty());
     let mut json = json::JsonValue::new_object();
     let mut main_json = connection.lock().await;
+    let cfg = cfg.lock().await;
+    let headers = req.headers();
     let user_id = 0;
+
+    if cfg["auth_type"] != "none" {
+        let userpass = match headers.get("Authorization") {
+            Some(auth) => {
+                println!("{}", auth.to_str().unwrap());
+                auth.to_str().unwrap().to_string()
+            }
+            _ =>  {
+                println!("Authorization not found");
+                response.headers_mut().append("WWW-Authenticate", "Basic".parse().unwrap());
+                *response.status_mut() = StatusCode::UNAUTHORIZED;
+                return Ok(response)
+            }
+        };
+
+        if userpass.starts_with("Basic ") {
+            let based = userpass.strip_prefix("Basic ").unwrap();
+            let decoded = general_purpose::STANDARD
+                .decode(based).unwrap();
+            let stringified = std::str::from_utf8(&decoded);
+            println!("{:?}", stringified);
+        }
+    }
 
     // match (req.method(), req.uri().path())
     match (req.method(), RicCall::from_str(req.uri().path())) {
