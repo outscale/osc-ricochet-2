@@ -172,6 +172,43 @@ async fn handler(req: Request<Body>,
             }
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
+        (&Method::POST, Ok(RicCall::ReadFlexibleGpus))  => {
+
+            let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+            let user_fgpus = &main_json[user_id]["FlexibleGpus"];
+
+            json["FlexibleGpus"] = (*user_fgpus).clone();
+
+                    if !bytes.is_empty() {
+                        let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                        match in_json {
+                            Ok(in_json) => {
+                                if in_json.has_key("Filters") {
+                                    let filter = &in_json["Filters"];
+
+                                    json["FlexibleGpus"] = json::JsonValue::new_array();
+
+                                    for fgpu in user_fgpus.members() {
+                                        let mut need_add = true;
+
+                                        need_add = have_request_filter(filter, fgpu,
+                                                                       "FlexibleGpuIds",
+                                                                       "FlexibleGpuId", need_add);
+                                        if need_add {
+                                            json["FlexibleGpus"].push((*fgpu).clone()).unwrap();
+                                        }
+                                    }
+                                }
+                            },
+                            Err(_) => {
+                                json["Error"] = "Invalid JSON format".into();
+                                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                                return Ok(response);
+                            }
+                        }
+                    }
+                    *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                },
         (&Method::POST, Ok(RicCall::CreateVms)) => {
             let vm_id = format!("i-{:08}", req_id);
             main_json[user_id]["Vms"].push(
@@ -202,6 +239,7 @@ async fn handler(req: Request<Body>,
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
         (&Method::POST, Ok(RicCall::CreateFlexibleGpu)) => {
+            let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
             let fgpu_json = json::object!{
                 DeleteOnVmDeletion: false,
                 FlexibleGpuId: format!("fgpu-{:08}", req_id),
@@ -214,7 +252,8 @@ async fn handler(req: Request<Body>,
 
 
             println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
-            json["FlexibleGpu"] = fgpu_json;
+            json["FlexibleGpu"] = json::array!{fgpu_json.clone()};
+            user_fgpu.push(fgpu_json).unwrap();
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
        _ => {
@@ -232,7 +271,7 @@ async fn main() {
     let mut connection = json::JsonValue::new_array();
     connection[0] = json::object!{
         Vms: json::JsonValue::new_array(),
-        FlexibleGpu: json::JsonValue::new_array()
+        FlexibleGpus: json::JsonValue::new_array()
     };
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
@@ -246,14 +285,16 @@ async fn main() {
         // clone it and move that clone into the async block
         let connection = connection.clone();
         let requet_id = requet_id.clone();
+        let cfg = cfg.clone();
      async move {
         // async block is only executed once, so just pass it on to the closure
         Ok::<_, hyper::Error>(service_fn( move |_req| {
             let connection =  connection.clone();
             let id = requet_id.fetch_add(1, Ordering::Relaxed);
+            let cfg = cfg.clone();
             // but this closure may also be called multiple times, so make
             // a clone for each call, and move the clone into the async block
-            async move { handler(_req, &connection, id).await }
+            async move { handler(_req, &connection, id, &cfg).await }
         }))
      }
     });
