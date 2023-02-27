@@ -1,5 +1,5 @@
 [package]
-name = "rust"
+name = "ricochet-2"
 version = "0.1.0"
 authors = ["Matthias Gatto <matthias.gatto@outscale.com>"]
 edition = "2021"
