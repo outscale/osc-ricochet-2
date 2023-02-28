@@ -38,6 +38,15 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
     }
 }
 
+fn bad_argument(req_id: usize ,mut json: json::JsonValue, error:  &str) -> Result<Response<Body>, Infallible> {
+    let mut response = Response::new(Body::empty());
+
+    json["Error"] = error.into();
+    *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+    return Ok(response);
+
+}
+
 fn remove_duplicate_slashes(path: &str) -> String {
     let mut new_path = String::new();
     let mut last_char = '_';
@@ -120,9 +129,9 @@ async fn handler(req: Request<Body>,
             let stringified = std::str::from_utf8(&decoded).unwrap();
             let tupeled = stringified.split_once(":").unwrap();
 
-            println!("{}", stringified);
+            println!("{}", users.dump());
             println!("{} - {}", tupeled.0, tupeled.1);
-            match users.members().position(|u| u["login"] == tupeled.0) {
+            match users.members().position(|u| {println!("{} == {}", u["login"], tupeled.0); u["login"] == tupeled.0}) {
                 Some(idx) => user_id = idx,
                 _ => {
                     *response.status_mut() = StatusCode::UNAUTHORIZED;
@@ -238,18 +247,20 @@ async fn handler(req: Request<Body>,
         (&Method::POST, Ok(RicCall::CreateTags)) => {
             let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
 
-            if !bytes.is_empty() {
-                println!("pas empty !");
-                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                match in_json {
-                    Ok(in_json) => {
-                        println!("{:#}", in_json.dump());
-                    },
-                    Err(_) => {
-                        json["Error"] = "Invalid JSON format".into();
-                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                        return Ok(response);
+            if bytes.is_empty() {
+                return bad_argument(req_id, json, "Create Tags require: 'ResourceIds', 'Tags' argument");
+            }
+
+            let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+            match in_json {
+                Ok(in_json) => {
+                    println!("{:#}", in_json.dump());
+                    if !in_json.has_key("Tags") && !in_json.has_key("ResourceIds") {
+                        return bad_argument(req_id, json, "Create Tags require: ResourceIds, Tags argument");
                     }
+                },
+                Err(_) => {
+                    return bad_argument(req_id, json, "Invalide json");
                 }
             }
             println!("CreateTags");
