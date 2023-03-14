@@ -38,13 +38,24 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
     }
 }
 
-fn bad_argument(req_id: usize ,mut json: json::JsonValue, error:  &str) -> Result<Response<Body>, Infallible> {
+fn bad_argument(req_id: usize ,mut json: json::JsonValue,
+                error:  &str) ->
+    Result<Response<Body>,Infallible> {
     let mut response = Response::new(Body::empty());
 
     json["Error"] = error.into();
     *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
     return Ok(response);
 
+}
+
+fn bad_auth(error: String) -> Result<Response<Body>,Infallible> {
+    let mut response = Response::new(Body::empty());
+
+    response.headers_mut().append("WWW-Authenticate", "Basic".parse().unwrap());
+    *response.body_mut() = Body::from(error);
+    *response.status_mut() = StatusCode::UNAUTHORIZED;
+    return Ok(response)
 }
 
 fn remove_duplicate_slashes(path: &str) -> String {
@@ -82,11 +93,16 @@ impl FromStr for RicCall {
         println!("{}", p);
         match p {
             "/" => Ok(RicCall::Root),
-            "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" => Ok(RicCall::ReadVms),
-            "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" => Ok(RicCall::CreateVms),
-            "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" => Ok(RicCall::ReadFlexibleGpus),
-            "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" => Ok(RicCall::CreateTags),
-            "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" => Ok(RicCall::CreateFlexibleGpu),
+            "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" =>
+                Ok(RicCall::ReadVms),
+            "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" =>
+                Ok(RicCall::CreateVms),
+            "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" =>
+                Ok(RicCall::ReadFlexibleGpus),
+            "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" =>
+                Ok(RicCall::CreateTags),
+            "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" =>
+                Ok(RicCall::CreateFlexibleGpu),
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
@@ -115,10 +131,7 @@ async fn handler(req: Request<Body>,
             }
             _ =>  {
                 println!("Authorization not found");
-                response.headers_mut().append("WWW-Authenticate", "Basic".parse().unwrap());
-                *response.body_mut() = Body::from("\"Authorization Header require\"");
-                *response.status_mut() = StatusCode::UNAUTHORIZED;
-                return Ok(response)
+                return bad_auth("\"Authorization Header require\"".to_string());
             }
         };
 
@@ -140,9 +153,30 @@ async fn handler(req: Request<Body>,
                 }
             }
             println!("{:?}", user_id);
+        } else if userpass.starts_with("OSC4-HMAC-SHA256") {
+            let cred = userpass.strip_prefix("OSC4-HMAC-SHA256 ").unwrap();
+            let cred = match cred.strip_prefix("Credential=") {
+                Some(v) => v,
+                _ =>  return bad_auth("\"Authorization Header is broken, should start witgh 'Credential='\"".to_string())
+            };
+            let cred = match cred.split_once('/') {
+                Some((v, _)) => v,
+                _ =>  return bad_auth("\"Authorization Header is broken, can't find ACCESS_KEY\"".to_string())
+            };
+            println!("cred: {}", cred);
+            match users.members().position(|u| {println!("{} == {}", u["access_key"], cred); u["access_key"] == cred}) {
+                Some(idx) => user_id = idx,
+                _ => {
+                    *response.status_mut() = StatusCode::UNAUTHORIZED;
+                    *response.body_mut() = Body::from("\"Unknow user\"");
+                    return Ok(response)
+                }
+            }
+
+        } else {
+            return bad_auth("\"Authorization Header wrong Format\"".to_string());
         }
     }
-
     // match (req.method(), req.uri().path())
     match (req.method(), RicCall::from_str(req.uri().path())) {
         (&Method::GET, Ok(RicCall::Root)) => {

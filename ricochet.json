@@ -2,10 +2,12 @@
     "auth_type": "exist",
     "users": [
 	{
+	    "access_key": "11112211111110000000",
 	    "login": "joe",
 	    "pass": "ashita wa dochida"
 	},
 	{
+	    "access_key": "11112211111110000333",
 	    "login": "titi",
 	    "pass": "toto"
 	}
