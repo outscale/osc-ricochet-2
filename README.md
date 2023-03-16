@@ -6,3 +6,8 @@ using this project, while expecting the same result as outscale API, might have 
 but you're a free man, so you can try.
 
 
+# configuration
+
+if you want Ricochet to Rise and Shine, you need to have the right conf in the right place.
+
+1rst argumnent of ricochet is the configuration path. (see ./ricochet.json)
