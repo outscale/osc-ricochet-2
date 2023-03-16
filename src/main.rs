@@ -124,6 +124,11 @@ async fn handler(req: Request<Body>,
 
     if cfg["auth_type"] != "none" {
         let users = &cfg["users"];
+        let auth_type = match cfg["auth_type"].as_str().unwrap() {
+            "exist" => 0,
+            "headarches" => 1,
+            _ => -1
+        };
         let userpass = match headers.get("Authorization") {
             Some(auth) => {
                 println!("{}", auth.to_str().unwrap());
@@ -144,7 +149,14 @@ async fn handler(req: Request<Body>,
 
             println!("{}", users.dump());
             println!("{} - {}", tupeled.0, tupeled.1);
-            match users.members().position(|u| {println!("{} == {}", u["login"], tupeled.0); u["login"] == tupeled.0}) {
+            match users.members().position(|u| {
+                println!("{} == {}", u["login"], tupeled.0);
+                let ret = u["login"] == tupeled.0;
+                if auth_type < 1 {
+                    return ret;
+                }
+                return u["pass"] == tupeled.1;
+            }) {
                 Some(idx) => user_id = idx,
                 _ => {
                     *response.status_mut() = StatusCode::UNAUTHORIZED;
