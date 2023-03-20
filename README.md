@@ -1,3 +1,4 @@
+[![Project Sandbox](https://docs.outscale.com/fr/userguide/_images/Project-Sandbox-yellow.svg)](https://docs.outscale.com/en/userguide/Open-Source-Projects.html)
 # osc-ricochet-2
 
 not a vaporware, but a cloudy stuff, about sending back request from where it come from.
