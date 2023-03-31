@@ -12,6 +12,10 @@ use base64::{engine::general_purpose, Engine as _};
 //use hyper::header::{Headers, Authorization};
 use std::str::FromStr;
 use std::fs;
+use sha2::{Digest, Sha256};
+use hmac::{Hmac, Mac};
+
+type HmacSha256 = Hmac<Sha256>;
 
 fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json["ResponseContext"] = json::JsonValue::new_object();
@@ -119,8 +123,11 @@ async fn handler(req: Request<Body>,
     let mut json = json::JsonValue::new_object();
     let mut main_json = connection.lock().await;
     let cfg = cfg.lock().await;
-    let headers = req.headers();
+    let headers = req.headers().clone();
     let mut user_id = 0;
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
 
     if cfg["auth_type"] != "none" {
         let users = &cfg["users"];
@@ -171,12 +178,160 @@ async fn handler(req: Request<Body>,
                 Some(v) => v,
                 _ =>  return bad_auth("\"Authorization Header is broken, should start witgh 'Credential='\"".to_string())
             };
-            let cred = match cred.split_once('/') {
-                Some((v, _)) => v,
+            let tuple_cred = match cred.split_once('/') {
+                Some((v, other)) => (v, other),
                 _ =>  return bad_auth("\"Authorization Header is broken, can't find ACCESS_KEY\"".to_string())
             };
+            let ak = tuple_cred.0;
+            let cred = tuple_cred.1;
+            println!("cred: {}", ak);
             println!("cred: {}", cred);
-            match users.members().position(|u| {println!("{} == {}", u["access_key"], cred); u["access_key"] == cred}) {
+            match users.members().position(|u| {
+                println!("{} == {}", u["access_key"], ak);
+                let ret = u["access_key"] == ak;
+
+                if auth_type < 1 || ret == false {
+                    return ret;
+                }
+
+                let true_sk = match u["secret_key"].as_str() {
+                    Some(v) => v,
+                    _ => return false
+                };
+                let x_date = match headers.get("X-Osc-Date") {
+                    Some(x_date) => {
+                        println!("{}", x_date.to_str().unwrap());
+                        x_date.to_str().unwrap().to_string()
+                    }
+                    _ =>  {
+                        println!("X-Osc-Date not found");
+                        return false;
+                    }
+                };
+                let host = match headers.get("Host") {
+                    Some(host) => {
+                        println!("{}", host.to_str().unwrap());
+                        host.to_str().unwrap().to_string()
+                    }
+                    _ =>  {
+                        println!("Host not found");
+                        return false;
+                    }
+                };
+                let short_date = &x_date[..8];
+                println!("{}", x_date);
+                println!("{}", short_date);
+                let cred = match cred.strip_prefix(format!("{}/", short_date).as_str()) {
+                    Some(v) => v,
+                    _ => return false
+                };
+                println!("cred {}", cred);
+                let tuple_cred = match cred.split_once('/') {
+                    Some((v, other)) => (v, other),
+                    _ =>  return false
+                };
+                let region = tuple_cred.0;
+                let cred = tuple_cred.1;
+                println!("region: {}", region);
+                println!("cred: {}", cred);
+
+                let tuple_cred = match cred.split_once('/') {
+                    Some((v, other)) => (v, other),
+                    _ =>  return false
+                };
+                let api = tuple_cred.0;
+                let cred = tuple_cred.1;
+                println!("api: {}", api);
+                println!("cred: {}", cred);
+
+                let tuple_cred = match cred.split_once(',') {
+                    Some((_, sc)) =>
+                        match sc.strip_prefix(" SignedHeaders=") {
+                            Some(v) => match v.split_once(',') {
+                                Some((v0,v1)) => (v0,v1),
+                                _ => return false
+                            },
+                            _ => return false
+                        },
+                    _ => return false
+                };
+                let signed_hdrs = tuple_cred.0;
+                let cred = tuple_cred.1;
+                println!("signed_hdrs: {}", signed_hdrs);
+                let send_signature = match cred.strip_prefix(" Signature=") {
+                    Some(sign) => sign,
+                    _ => return false
+                };
+
+                let mut hasher = Sha256::new();
+                hasher.update(bytes.clone());
+                let post_sha = hasher.finalize();
+                println!("data hash: {:x}", post_sha);
+                let canonical_request = format!(
+                    "POST
+{}
+
+{}
+{}
+{:x}",
+                    uri.path(),
+                    format!("host:{}\nx-osc-date:{}\n", host, x_date),
+                    signed_hdrs, post_sha);
+                println!("{}", canonical_request);
+                let credential_scope = format!("{}/{}/{}/{}",
+                                               short_date, region, api, "osc4_request");
+                println!("{}", credential_scope);
+                let mut hasher = Sha256::new();
+                hasher.update(canonical_request);
+                let canonical_request_sha = hasher.finalize();
+                let str_to_sign = format!("OSC4-HMAC-SHA256
+{}
+{}
+{:x}", x_date, credential_scope, canonical_request_sha);
+                println!("{}", str_to_sign);
+                let mut hmac = match HmacSha256::new_from_slice(format!("OSC4{}", true_sk).as_bytes()) {
+                    Ok(v) => v,
+                    _ => return false
+                };
+                hmac.update(short_date.as_bytes());
+                println!("hmac: (secret {}/{}) {:x}",
+                         format!("OSC4{}", true_sk), short_date, hmac.clone().finalize().into_bytes());
+                hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
+                    Ok(v) => v,
+                    _ => return false
+                };
+                hmac.update(region.as_bytes());
+                println!("hr: {:x}", hmac.clone().finalize().into_bytes());
+
+                hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
+                    Ok(v) => v,
+                    _ => return false
+                };
+
+                hmac.update(b"api");
+
+                hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
+                    Ok(v) => v,
+                    _ => return false
+                };
+                hmac.update(b"osc4_request");
+
+                hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
+                    Ok(v) => v,
+                    _ => return false
+                };
+                hmac.update(str_to_sign.as_bytes());
+                let signature = hmac.finalize();
+                println!("re {} - api - osc4_request\nstrtos:\n{}",
+                         region, str_to_sign);
+                println!("hmac: {:x} - {}: {:?}",
+                         signature.clone().into_bytes(),
+                         send_signature,
+                         format!("{:x}", signature.clone().into_bytes()) == send_signature
+                );
+                return format!("{:x}", signature.clone().into_bytes()) == send_signature;
+
+            }) {
                 Some(idx) => user_id = idx,
                 _ => {
                     *response.status_mut() = StatusCode::UNAUTHORIZED;
@@ -190,20 +345,18 @@ async fn handler(req: Request<Body>,
         }
     }
     // match (req.method(), req.uri().path())
-    match (req.method(), RicCall::from_str(req.uri().path())) {
+    match (&method, RicCall::from_str(uri.path())) {
         (&Method::GET, Ok(RicCall::Root)) => {
             *response.body_mut() = Body::from("Try POSTing to /ReadVms");
         },
         (&Method::POST, Ok(RicCall::Debug)) => {
-            let hdr = format!("{:?}", req.headers());
-            let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+            let hdr = format!("{:?}", headers);
             *response.body_mut() = Body::from(format!("data: {}\nheaders: {}\n",
                                                       String::from_utf8(bytes.to_vec()).unwrap(),
                                                       hdr));
         },
         (&Method::POST, Ok(RicCall::ReadVms))  => {
 
-            let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
             let user_vms = &main_json[user_id]["Vms"];
 
             json["Vms"] = (*user_vms).clone();
@@ -243,7 +396,6 @@ async fn handler(req: Request<Body>,
         },
         (&Method::POST, Ok(RicCall::ReadFlexibleGpus))  => {
 
-            let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
             let user_fgpus = &main_json[user_id]["FlexibleGpus"];
 
             json["FlexibleGpus"] = (*user_fgpus).clone();
@@ -291,8 +443,6 @@ async fn handler(req: Request<Body>,
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
         (&Method::POST, Ok(RicCall::CreateTags)) => {
-            let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
-
             if bytes.is_empty() {
                 return bad_argument(req_id, json, "Create Tags require: 'ResourceIds', 'Tags' argument");
             }
