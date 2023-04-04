@@ -138,7 +138,6 @@ async fn handler(req: Request<Body>,
         };
         let userpass = match headers.get("Authorization") {
             Some(auth) => {
-                println!("{}", auth.to_str().unwrap());
                 auth.to_str().unwrap().to_string()
             }
             _ =>  {
@@ -154,10 +153,7 @@ async fn handler(req: Request<Body>,
             let stringified = std::str::from_utf8(&decoded).unwrap();
             let tupeled = stringified.split_once(":").unwrap();
 
-            println!("{}", users.dump());
-            println!("{} - {}", tupeled.0, tupeled.1);
             match users.members().position(|u| {
-                println!("{} == {}", u["login"], tupeled.0);
                 let ret = u["login"] == tupeled.0;
                 if auth_type < 1 {
                     return ret;
@@ -171,7 +167,6 @@ async fn handler(req: Request<Body>,
                     return Ok(response)
                 }
             }
-            println!("{:?}", user_id);
         } else if userpass.starts_with("OSC4-HMAC-SHA256") {
             let cred = userpass.strip_prefix("OSC4-HMAC-SHA256 ").unwrap();
             let cred = match cred.strip_prefix("Credential=") {
@@ -184,10 +179,7 @@ async fn handler(req: Request<Body>,
             };
             let ak = tuple_cred.0;
             let cred = tuple_cred.1;
-            println!("cred: {}", ak);
-            println!("cred: {}", cred);
             match users.members().position(|u| {
-                println!("{} == {}", u["access_key"], ak);
                 let ret = u["access_key"] == ak;
 
                 if auth_type < 1 || ret == false {
@@ -200,7 +192,6 @@ async fn handler(req: Request<Body>,
                 };
                 let x_date = match headers.get("X-Osc-Date") {
                     Some(x_date) => {
-                        println!("{}", x_date.to_str().unwrap());
                         x_date.to_str().unwrap().to_string()
                     }
                     _ =>  {
@@ -210,7 +201,6 @@ async fn handler(req: Request<Body>,
                 };
                 let host = match headers.get("Host") {
                     Some(host) => {
-                        println!("{}", host.to_str().unwrap());
                         host.to_str().unwrap().to_string()
                     }
                     _ =>  {
@@ -219,21 +209,17 @@ async fn handler(req: Request<Body>,
                     }
                 };
                 let short_date = &x_date[..8];
-                println!("{}", x_date);
-                println!("{}", short_date);
                 let cred = match cred.strip_prefix(format!("{}/", short_date).as_str()) {
                     Some(v) => v,
                     _ => return false
                 };
-                println!("cred {}", cred);
+
                 let tuple_cred = match cred.split_once('/') {
                     Some((v, other)) => (v, other),
                     _ =>  return false
                 };
                 let region = tuple_cred.0;
                 let cred = tuple_cred.1;
-                println!("region: {}", region);
-                println!("cred: {}", cred);
 
                 let tuple_cred = match cred.split_once('/') {
                     Some((v, other)) => (v, other),
@@ -241,8 +227,6 @@ async fn handler(req: Request<Body>,
                 };
                 let api = tuple_cred.0;
                 let cred = tuple_cred.1;
-                println!("api: {}", api);
-                println!("cred: {}", cred);
 
                 let tuple_cred = match cred.split_once(',') {
                     Some((_, sc)) =>
@@ -257,7 +241,6 @@ async fn handler(req: Request<Body>,
                 };
                 let signed_hdrs = tuple_cred.0;
                 let cred = tuple_cred.1;
-                println!("signed_hdrs: {}", signed_hdrs);
                 let send_signature = match cred.strip_prefix(" Signature=") {
                     Some(sign) => sign,
                     _ => return false
@@ -266,7 +249,6 @@ async fn handler(req: Request<Body>,
                 let mut hasher = Sha256::new();
                 hasher.update(bytes.clone());
                 let post_sha = hasher.finalize();
-                println!("data hash: {:x}", post_sha);
                 let canonical_request = format!(
                     "POST
 {}
@@ -288,20 +270,17 @@ async fn handler(req: Request<Body>,
 {}
 {}
 {:x}", x_date, credential_scope, canonical_request_sha);
-                println!("{}", str_to_sign);
+
                 let mut hmac = match HmacSha256::new_from_slice(format!("OSC4{}", true_sk).as_bytes()) {
                     Ok(v) => v,
                     _ => return false
                 };
                 hmac.update(short_date.as_bytes());
-                println!("hmac: (secret {}/{}) {:x}",
-                         format!("OSC4{}", true_sk), short_date, hmac.clone().finalize().into_bytes());
                 hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
                     Ok(v) => v,
                     _ => return false
                 };
                 hmac.update(region.as_bytes());
-                println!("hr: {:x}", hmac.clone().finalize().into_bytes());
 
                 hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
                     Ok(v) => v,
@@ -322,13 +301,7 @@ async fn handler(req: Request<Body>,
                 };
                 hmac.update(str_to_sign.as_bytes());
                 let signature = hmac.finalize();
-                println!("re {} - api - osc4_request\nstrtos:\n{}",
-                         region, str_to_sign);
-                println!("hmac: {:x} - {}: {:?}",
-                         signature.clone().into_bytes(),
-                         send_signature,
-                         format!("{:x}", signature.clone().into_bytes()) == send_signature
-                );
+
                 return format!("{:x}", signature.clone().into_bytes()) == send_signature;
 
             }) {
