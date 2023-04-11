@@ -14,6 +14,7 @@ use std::str::FromStr;
 use std::fs;
 use sha2::{Digest, Sha256};
 use hmac::{Hmac, Mac};
+use simple_hyper_server_tls::*;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -527,29 +528,46 @@ async fn main() {
     // We'll bind to 127.0.0.1:3000
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
-    let make_svc = make_service_fn( move |_| { // first move it into the closure
-    // closure can be called multiple times, so for each call, we must
-        // clone it and move that clone into the async block
-        let connection = connection.clone();
-        let requet_id = requet_id.clone();
-        let cfg = cfg.clone();
-     async move {
-        // async block is only executed once, so just pass it on to the closure
-        Ok::<_, hyper::Error>(service_fn( move |_req| {
-            let connection =  connection.clone();
-            let id = requet_id.fetch_add(1, Ordering::Relaxed);
-            let cfg = cfg.clone();
-            // but this closure may also be called multiple times, so make
-            // a clone for each call, and move the clone into the async block
-            async move { handler(_req, &connection, id, &cfg).await }
-        }))
-     }
-    });
+    let any_server = match tls {
+        true => hyper_from_pem_files("cert.pem", "key.pem", Protocols::ALL, &addr).unwrap().serve(
+            make_service_fn( move |_| { // first move it into the closure
+                // closure can be called multiple times, so for each call, we must
+                // clone it and move that clone into the async block
+                let connection = connection.clone();
+                let requet_id = requet_id.clone();
+                let cfg = cfg.clone();
+                async move {
+                    // async block is only executed once, so just pass it on to the closure
+                    Ok::<_, hyper::Error>(service_fn( move |_req| {
+                        let connection =  connection.clone();
+                        let id = requet_id.fetch_add(1, Ordering::Relaxed);
+                        let cfg = cfg.clone();
+                        // but this closure may also be called multiple times, so make
+                        // a clone for each call, and move the clone into the async block
+                        async move { handler(_req, &connection, id, &cfg).await }
+                    }))
+                }
+            })
+        ).await,
+        _ => Server::bind(&addr).serve(
+            make_service_fn( move |_| {
+                let connection = connection.clone();
+                let requet_id = requet_id.clone();
+                let cfg = cfg.clone();
+                async move {
+                    Ok::<_, hyper::Error>(service_fn( move |_req| {
+                        let connection =  connection.clone();
+                        let id = requet_id.fetch_add(1, Ordering::Relaxed);
+                        let cfg = cfg.clone();
+                        async move { handler(_req, &connection, id, &cfg).await }
+                    }))
+                }
+            })
+        ).await
+    };
 
-    let server = Server::bind(&addr).serve(make_svc);
-
-    // Run this server for... forever!
-    if let Err(e) = server.await {
+    if let Err(e) = any_server {
         eprintln!("server error: {}", e);
     }
+    // Run this server for... forever!
 }
