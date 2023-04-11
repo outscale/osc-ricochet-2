@@ -85,6 +85,7 @@ enum RicCall {
     ReadVms,
     CreateTags,
     CreateFlexibleGpu,
+    CreateImage,
     ReadImages,
     ReadLoadBalancers,
     ReadFlexibleGpus
@@ -110,6 +111,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateTags),
             "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" =>
                 Ok(RicCall::CreateFlexibleGpu),
+            "/CreateImage" | "/api/v1/CreateImage" | "/api/latest/CreateImage" =>
+                Ok(RicCall::CreateImage),
             "/ReadImages" | "/api/v1/ReadImages" | "/api/latest/ReadImages" =>
                 Ok(RicCall::ReadImages),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
@@ -372,6 +375,18 @@ async fn handler(req: Request<Body>,
                     }
                 }
             }
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
+        (&Method::POST, Ok(RicCall::CreateImage)) => {
+            let image_id = format!("ami-{:08}", req_id);
+            let image = json::object!{
+                    AccountId: user_id,
+                    ImageId: image_id
+                };
+
+            main_json[user_id]["Images"].push(
+                image.clone()).unwrap();
+            json["Images"] = json::array!{image};
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
         (&Method::POST, Ok(RicCall::ReadImages))  => {
