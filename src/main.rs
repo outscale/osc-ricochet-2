@@ -138,9 +138,9 @@ async fn handler(req: Request<Body>,
     let method = req.method().clone();
     let uri = req.uri().clone();
     let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+    let users = &cfg["users"];
 
     if cfg["auth_type"] != "none" {
-        let users = &cfg["users"];
         let auth_type = match cfg["auth_type"].as_str().unwrap() {
             "exist" => 0,
             "headarches" => 1,
@@ -379,10 +379,13 @@ async fn handler(req: Request<Body>,
         },
         (&Method::POST, Ok(RicCall::CreateImage)) => {
             let image_id = format!("ami-{:08}", req_id);
-            let image = json::object!{
-                    AccountId: user_id,
-                    ImageId: image_id
-                };
+            let mut image = json::object!{
+                AccountId: user_id,
+                ImageId: image_id
+            };
+            if !users[user_id]["login"].is_null() {
+                image["AccountAlias"] = users[user_id]["login"].clone()
+            }
 
             main_json[user_id]["Images"].push(
                 image.clone()).unwrap();
