@@ -84,6 +84,8 @@ enum RicCall {
     ReadVms,
     CreateTags,
     CreateFlexibleGpu,
+    ReadImages,
+    ReadLoadBalancers,
     ReadFlexibleGpus
 }
 
@@ -107,6 +109,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateTags),
             "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" =>
                 Ok(RicCall::CreateFlexibleGpu),
+            "/ReadImages" | "/api/v1/ReadImages" | "/api/latest/ReadImages" =>
+                Ok(RicCall::ReadImages),
+            "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
+                Ok(RicCall::ReadLoadBalancers),
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
@@ -367,6 +373,22 @@ async fn handler(req: Request<Body>,
             }
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
+        (&Method::POST, Ok(RicCall::ReadImages))  => {
+
+            let user_vms = &main_json[user_id]["Images"];
+
+            json["Images"] = (*user_vms).clone();
+
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
+        (&Method::POST, Ok(RicCall::ReadLoadBalancers))  => {
+
+            let user_vms = &main_json[user_id]["LoadBalancers"];
+
+            json["LoadBalancers"] = (*user_vms).clone();
+
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
         (&Method::POST, Ok(RicCall::ReadFlexibleGpus))  => {
 
             let user_fgpus = &main_json[user_id]["FlexibleGpus"];
@@ -453,7 +475,8 @@ async fn handler(req: Request<Body>,
             user_fgpu.push(fgpu_json).unwrap();
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
-       _ => {
+        _ => {
+            println!("Unknow call {}", uri.path());
             *response.status_mut() = StatusCode::NOT_FOUND;
        },
     };
@@ -487,9 +510,15 @@ async fn main() {
     for _m in cfg["users"].members() {
         connection.push(json::object!{
             Vms: json::JsonValue::new_array(),
-            FlexibleGpus: json::JsonValue::new_array()
+            FlexibleGpus: json::JsonValue::new_array(),
+            LoadBalancers: json::JsonValue::new_array(),
+            Images: json::JsonValue::new_array()
         }).unwrap();
     }
+    let tls = match cfg["tls"] == true {
+        true => true,
+        _ => false
+    };
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
     let cfg = Arc::new(Mutex::new(cfg));
