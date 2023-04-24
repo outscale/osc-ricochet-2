@@ -83,6 +83,7 @@ enum RicCall {
     Debug,
     CreateVms,
     ReadVms,
+    DeleteVms,
     CreateTags,
     CreateFlexibleGpu,
     CreateImage,
@@ -105,6 +106,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadVms),
             "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" =>
                 Ok(RicCall::CreateVms),
+            "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
+                Ok(RicCall::DeleteVms),
             "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" =>
                 Ok(RicCall::ReadFlexibleGpus),
             "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" =>
@@ -377,6 +380,50 @@ async fn handler(req: Request<Body>,
             }
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
+        (&Method::POST, Ok(RicCall::DeleteVms))  => {
+
+            let user_vms = &mut main_json[user_id]["Vms"];
+
+            json["Vms"] = (*user_vms).clone();
+
+            if !bytes.is_empty() {
+                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                match in_json {
+                    Ok(in_json) => {
+                        if in_json.has_key("VmIds") {
+                            let ids = &in_json["VmIds"];
+
+                            json["Vms"] = json::JsonValue::new_array();
+                            let mut idx = 0;
+                            let mut rm_array = vec![];
+                            for vm in user_vms.members() {
+                                let mut need_rm = true;
+
+                                for id in ids.members() {
+                                    if *id == vm["VmId"] {
+                                        need_rm = true;
+                                    }
+                                }
+                                if need_rm {
+                                    json["Vms"].push((*vm).clone()).unwrap();
+                                    rm_array.push(idx);
+                                }
+                                idx += 1;
+                            }
+                            for i in rm_array {
+                                user_vms.array_remove(i);
+                            }
+                        }
+                    },
+                    Err(_) => {
+                        json["Error"] = "Invalid JSON format".into();
+                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                        return Ok(response);
+                    }
+                }
+            }
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
         (&Method::POST, Ok(RicCall::CreateImage)) => {
             let image_id = format!("ami-{:08}", req_id);
             let mut image = json::object!{
@@ -387,6 +434,21 @@ async fn handler(req: Request<Body>,
                 image["AccountAlias"] = users[user_id]["login"].clone()
             }
 
+            if !bytes.is_empty() {
+                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                match in_json {
+                    Ok(in_json) => {
+                        if in_json.has_key("ImageName") {
+                            image["ImageName"] = in_json["ImageName"].clone();
+                        }
+                    },
+                    Err(_) => {
+                        json["Error"] = "Invalid JSON format".into();
+                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                        return Ok(response);
+                    }
+                }
+            }
             main_json[user_id]["Images"].push(
                 image.clone()).unwrap();
             json["Images"] = json::array!{image};
