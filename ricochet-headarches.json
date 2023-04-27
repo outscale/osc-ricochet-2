@@ -1,6 +1,6 @@
 {
     "auth_type": "headarches",
-    "tls": true,
+    "tls": false,
     "users": [
 	{
 	    "access_key": "11112211111110000000",

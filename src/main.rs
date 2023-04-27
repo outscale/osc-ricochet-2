@@ -81,6 +81,8 @@ fn remove_duplicate_slashes(path: &str) -> String {
 enum RicCall {
     Root,
     Debug,
+    CreateKeypair,
+    ReadKeypairs,
     CreateVms,
     ReadVms,
     DeleteVms,
@@ -102,6 +104,10 @@ impl FromStr for RicCall {
         println!("{}", p);
         match p {
             "/" => Ok(RicCall::Root),
+            "/CreateKeypair" | "/api/v1/CreateKeypair" | "/api/latest/CreateKeypair" =>
+                Ok(RicCall::CreateKeypair),
+            "/ReadKeypairs" | "/api/v1/ReadKeypairs" | "/api/latest/ReadKeypairs" =>
+                Ok(RicCall::ReadKeypairs),
             "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" =>
                 Ok(RicCall::ReadVms),
             "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" =>
@@ -454,11 +460,19 @@ async fn handler(req: Request<Body>,
             json["Images"] = json::array!{image};
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
+        (&Method::POST, Ok(RicCall::ReadKeypairs))  => {
+
+            let user_kps = &main_json[user_id]["Keypairs"];
+
+            json["Keypairs"] = (*user_kps).clone();
+
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
         (&Method::POST, Ok(RicCall::ReadImages))  => {
 
-            let user_vms = &main_json[user_id]["Images"];
+            let user_imgs = &main_json[user_id]["Images"];
 
-            json["Images"] = (*user_vms).clone();
+            json["Images"] = (*user_imgs).clone();
 
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
@@ -506,6 +520,30 @@ async fn handler(req: Request<Body>,
                     }
                     *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
                 },
+        (&Method::POST, Ok(RicCall::CreateKeypair)) => {
+            let mut kp = json::object!{};
+            match json::parse(std::str::from_utf8(&bytes).unwrap()) {
+                Ok(in_json) => {
+                    if in_json.has_key("KeypairName") {
+                        kp["KeypairName"] = in_json["KeypairName"].clone();
+                    } else {
+                        json["Error"] = "KeypairName missing".into();
+                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                        return Ok(response);
+                    }
+                },
+                Err(_) => {
+                    json["Error"] = "Invalid JSON format".into();
+                    *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                    return Ok(response);
+                }
+            };
+
+            main_json[user_id]["Keypairs"].push(
+                kp.clone()).unwrap();
+            json["Keypair"] = kp;
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
         (&Method::POST, Ok(RicCall::CreateVms)) => {
             let vm_id = format!("i-{:08}", req_id);
             let vm = json::object!{
@@ -593,7 +631,8 @@ async fn main() {
             Vms: json::JsonValue::new_array(),
             FlexibleGpus: json::JsonValue::new_array(),
             LoadBalancers: json::JsonValue::new_array(),
-            Images: json::JsonValue::new_array()
+            Images: json::JsonValue::new_array(),
+            Keypairs: json::JsonValue::new_array(),
         }).unwrap();
     }
     let tls = match cfg["tls"] == true {
