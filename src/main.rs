@@ -83,6 +83,7 @@ enum RicCall {
     Debug,
     CreateKeypair,
     ReadKeypairs,
+    DeleteKeypair,
     CreateVms,
     ReadVms,
     DeleteVms,
@@ -108,6 +109,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateKeypair),
             "/ReadKeypairs" | "/api/v1/ReadKeypairs" | "/api/latest/ReadKeypairs" =>
                 Ok(RicCall::ReadKeypairs),
+            "/DeleteKeypair" | "/api/v1/DeleteKeypair" | "/api/latest/DeleteKeypair" =>
+                Ok(RicCall::DeleteKeypair),
             "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" =>
                 Ok(RicCall::ReadVms),
             "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" =>
@@ -419,6 +422,44 @@ async fn handler(req: Request<Body>,
                             for i in rm_array {
                                 user_vms.array_remove(i);
                             }
+                        }
+                    },
+                    Err(_) => {
+                        json["Error"] = "Invalid JSON format".into();
+                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                        return Ok(response);
+                    }
+                }
+            }
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
+        (&Method::POST, Ok(RicCall::DeleteKeypair))  => {
+
+            let user_kps = &mut main_json[user_id]["Keypairs"];
+
+            if !bytes.is_empty() {
+                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                match in_json {
+                    Ok(in_json) => {
+                        if in_json.has_key("KeypairName") {
+                            let name = &in_json["KeypairName"];
+
+                            let mut idx = 0;
+                            let mut rm = false;
+                            for vm in user_kps.members() {
+                                if *name == vm["KeypairName"] {
+                                    rm = true;
+                                    break;
+                                }
+                                idx += 1;
+                            }
+                            if rm {
+                                user_kps.array_remove(idx);
+                            }
+                        } else {
+                            json["Error"] = "KeypairName missing".into();
+                            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                            return Ok(response);
                         }
                     },
                     Err(_) => {
