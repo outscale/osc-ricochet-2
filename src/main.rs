@@ -525,7 +525,15 @@ async fn handler(req: Request<Body>,
             match json::parse(std::str::from_utf8(&bytes).unwrap()) {
                 Ok(in_json) => {
                     if in_json.has_key("KeypairName") {
-                        kp["KeypairName"] = in_json["KeypairName"].clone();
+                        let name = in_json["KeypairName"].to_string();
+                        for k in main_json[user_id]["Keypairs"].members() {
+                            if k["KeypairName"].to_string() == name {
+                                json["Error"] = "KeypairName Name conflict".into();
+                                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                                return Ok(response);
+                            }
+                        }
+                        kp["KeypairName"] = json::JsonValue::String(name);
                     } else {
                         json["Error"] = "KeypairName missing".into();
                         *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
