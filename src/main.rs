@@ -497,7 +497,12 @@ async fn handler(req: Request<Body>,
 
             let user_kps = &main_json[user_id]["Keypairs"];
 
-            json["Keypairs"] = (*user_kps).clone();
+            let mut kps = (*user_kps).clone();
+
+            for k in kps.members_mut() {
+                k.remove("PrivateKey");
+            }
+            json["Keypairs"] = kps;
 
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
@@ -571,7 +576,7 @@ async fn handler(req: Request<Body>,
                         let private_pem = Pem::new("RSA PRIVATE KEY", private_key);
                         let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
 
-                        kp["KeypairName"] = json::JsonValue::String(private);
+                        kp["PrivateKey"] = json::JsonValue::String(private);
                     } else {
                         return bad_argument(req_id, json, "KeypairName Missing")
                     }
