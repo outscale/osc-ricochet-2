@@ -15,6 +15,8 @@ use std::fs;
 use sha2::{Digest, Sha256};
 use hmac::{Hmac, Mac};
 use simple_hyper_server_tls::*;
+use openssl::rsa::Rsa;
+use pem::{Pem, encode_config, EncodeConfig, LineEnding};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -381,9 +383,7 @@ async fn handler(req: Request<Body>,
                         }
                     },
                     Err(_) => {
-                        json["Error"] = "Invalid JSON format".into();
-                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                        return Ok(response);
+                        return bad_argument(req_id, json, "Invalide json");
                     }
                 }
             }
@@ -425,9 +425,7 @@ async fn handler(req: Request<Body>,
                         }
                     },
                     Err(_) => {
-                        json["Error"] = "Invalid JSON format".into();
-                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                        return Ok(response);
+                        return bad_argument(req_id, json, "Invalide json");
                     }
                 }
             }
@@ -457,15 +455,11 @@ async fn handler(req: Request<Body>,
                                 user_kps.array_remove(idx);
                             }
                         } else {
-                            json["Error"] = "KeypairName missing".into();
-                            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                            return Ok(response);
+                            return bad_argument(req_id, json, "KeypairName Missing")
                         }
                     },
                     Err(_) => {
-                        json["Error"] = "Invalid JSON format".into();
-                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                        return Ok(response);
+                        return bad_argument(req_id, json, "Invalide json");
                     }
                 }
             }
@@ -490,9 +484,7 @@ async fn handler(req: Request<Body>,
                         }
                     },
                     Err(_) => {
-                        json["Error"] = "Invalid JSON format".into();
-                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                        return Ok(response);
+                        return bad_argument(req_id, json, "Invalide json");
                     }
                 }
             }
@@ -553,9 +545,7 @@ async fn handler(req: Request<Body>,
                                 }
                             },
                             Err(_) => {
-                                json["Error"] = "Invalid JSON format".into();
-                                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                                return Ok(response);
+                                return bad_argument(req_id, json, "Invalid JSON format")
                             }
                         }
                     }
@@ -569,22 +559,25 @@ async fn handler(req: Request<Body>,
                         let name = in_json["KeypairName"].to_string();
                         for k in main_json[user_id]["Keypairs"].members() {
                             if k["KeypairName"].to_string() == name {
-                                json["Error"] = "KeypairName Name conflict".into();
-                                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                                return Ok(response);
+                                return bad_argument(req_id, json, "KeypairName Name conflict")
                             }
                         }
                         kp["KeypairName"] = json::JsonValue::String(name);
+                        let rsa = Rsa::generate(2048).unwrap();
+
+                        //let public_key = rsa.public_key_to_der().unwrap();
+                        let private_key = rsa.private_key_to_der().unwrap();
+
+                        let private_pem = Pem::new("RSA PRIVATE KEY", private_key);
+                        let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
+
+                        kp["KeypairName"] = json::JsonValue::String(private);
                     } else {
-                        json["Error"] = "KeypairName missing".into();
-                        *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                        return Ok(response);
+                        return bad_argument(req_id, json, "KeypairName Missing")
                     }
                 },
                 Err(_) => {
-                    json["Error"] = "Invalid JSON format".into();
-                    *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                    return Ok(response);
+                    return bad_argument(req_id, json, "Invalid JSON format")
                 }
             };
 
