@@ -16,7 +16,9 @@ use sha2::{Digest, Sha256};
 use hmac::{Hmac, Mac};
 use simple_hyper_server_tls::*;
 use openssl::rsa::Rsa;
+use openssl::x509::X509;
 use pem::{Pem, encode_config, EncodeConfig, LineEnding};
+use openssl::hash::MessageDigest;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -137,6 +139,13 @@ impl FromStr for RicCall {
     }
 }
 
+fn v4_error_ret(error_msg: &mut String, error:  &str) -> bool
+{
+    *error_msg = "v4 error: ".to_string();
+    error_msg.push_str(error);
+    false
+}
+
 // connection: sqlite::Connection , connection: & sqlite::ConnectionWithFullMutex
 async fn handler(req: Request<Body>,
                  connection: & Arc<futures::lock::Mutex<json::JsonValue>>,
@@ -169,6 +178,7 @@ async fn handler(req: Request<Body>,
                 return bad_auth("\"Authorization Header require\"".to_string());
             }
         };
+        let mut error_msg = "\"Unknow user\"".to_string();
 
         if userpass.starts_with("Basic ") {
             let based = userpass.strip_prefix("Basic ").unwrap();
@@ -187,7 +197,7 @@ async fn handler(req: Request<Body>,
                 Some(idx) => user_id = idx,
                 _ => {
                     *response.status_mut() = StatusCode::UNAUTHORIZED;
-                    *response.body_mut() = Body::from("\"Unknow user\"");
+                    *response.body_mut() = Body::from(error_msg);
                     return Ok(response)
                 }
             }
@@ -203,6 +213,7 @@ async fn handler(req: Request<Body>,
             };
             let ak = tuple_cred.0;
             let cred = tuple_cred.1;
+            println!("{}", cred);
             match users.members().position(|u| {
                 let ret = u["access_key"] == ak;
 
@@ -212,7 +223,7 @@ async fn handler(req: Request<Body>,
 
                 let true_sk = match u["secret_key"].as_str() {
                     Some(v) => v,
-                    _ => return false
+                    _ => return v4_error_ret(&mut error_msg, "fail to get secret_key")
                 };
                 let x_date = match headers.get("X-Osc-Date") {
                     Some(x_date) => {
@@ -220,17 +231,14 @@ async fn handler(req: Request<Body>,
                     }
                     _ =>  {
                         println!("X-Osc-Date not found");
-                        return false;
+                        return v4_error_ret(&mut error_msg, "X-Osc-Date not found");
                     }
                 };
                 let host = match headers.get("Host") {
                     Some(host) => {
                         host.to_str().unwrap().to_string()
                     }
-                    _ =>  {
-                        println!("Host not found");
-                        return false;
-                    }
+                    _ => return v4_error_ret(&mut error_msg, "Host not found")
                 };
                 let short_date = &x_date[..8];
                 let cred = match cred.strip_prefix(format!("{}/", short_date).as_str()) {
@@ -240,14 +248,14 @@ async fn handler(req: Request<Body>,
 
                 let tuple_cred = match cred.split_once('/') {
                     Some((v, other)) => (v, other),
-                    _ =>  return false
+                    _ =>  return v4_error_ret(&mut error_msg, "missing '/'")
                 };
                 let region = tuple_cred.0;
                 let cred = tuple_cred.1;
 
                 let tuple_cred = match cred.split_once('/') {
                     Some((v, other)) => (v, other),
-                    _ =>  return false
+                    _ =>  return v4_error_ret(&mut error_msg, "missing '/'")
                 };
                 let api = tuple_cred.0;
                 let cred = tuple_cred.1;
@@ -257,22 +265,35 @@ async fn handler(req: Request<Body>,
                         match sc.strip_prefix(" SignedHeaders=") {
                             Some(v) => match v.split_once(',') {
                                 Some((v0,v1)) => (v0,v1),
-                                _ => return false
+                                _ => return v4_error_ret(&mut error_msg, "missing ','")
                             },
-                            _ => return false
+                            _ => return v4_error_ret(&mut error_msg, "missing 'SignedHeaders='")
                         },
-                    _ => return false
+                    _ => return v4_error_ret(&mut error_msg, "missing ','")
                 };
                 let signed_hdrs = tuple_cred.0;
                 let cred = tuple_cred.1;
                 let send_signature = match cred.strip_prefix(" Signature=") {
                     Some(sign) => sign,
-                    _ => return false
+                    _ => return v4_error_ret(&mut error_msg, "missing 'Signature='")
                 };
 
                 let mut hasher = Sha256::new();
                 hasher.update(bytes.clone());
                 let post_sha = hasher.finalize();
+                let mut canonical_hdrs =
+                    match signed_hdrs.contains("content-type") {
+                        true =>
+                            match headers.get("Content-Type") {
+                                Some(ct) => format!("content-type:{}\n", ct.to_str().unwrap()),
+                                _ => return v4_error_ret(&mut error_msg, "content-type found, but not found")
+                            },
+                        _ =>  {
+                            "".to_string()
+                        }
+                };
+                canonical_hdrs.push_str(format!("host:{}\nx-osc-date:{}\n", host, x_date).as_str());
+
                 let canonical_request = format!(
                     "POST
 {}
@@ -281,12 +302,12 @@ async fn handler(req: Request<Body>,
 {}
 {:x}",
                     uri.path(),
-                    format!("host:{}\nx-osc-date:{}\n", host, x_date),
+                    canonical_hdrs,
                     signed_hdrs, post_sha);
                 println!("{}", canonical_request);
                 let credential_scope = format!("{}/{}/{}/{}",
                                                short_date, region, api, "osc4_request");
-                println!("{}", credential_scope);
+                println!("==canonical_request ret==\n{}", canonical_request);
                 let mut hasher = Sha256::new();
                 hasher.update(canonical_request);
                 let canonical_request_sha = hasher.finalize();
@@ -311,7 +332,7 @@ async fn handler(req: Request<Body>,
                     _ => return false
                 };
 
-                hmac.update(b"api");
+                hmac.update(api.as_bytes());
 
                 hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
                     Ok(v) => v,
@@ -332,7 +353,7 @@ async fn handler(req: Request<Body>,
                 Some(idx) => user_id = idx,
                 _ => {
                     *response.status_mut() = StatusCode::UNAUTHORIZED;
-                    *response.body_mut() = Body::from("\"Unknow user\"");
+                    *response.body_mut() = Body::from(error_msg);
                     return Ok(response)
                 }
             }
@@ -570,13 +591,16 @@ async fn handler(req: Request<Body>,
                         kp["KeypairName"] = json::JsonValue::String(name);
                         let rsa = Rsa::generate(2048).unwrap();
 
-                        //let public_key = rsa.public_key_to_der().unwrap();
+                        let public_key = rsa.public_key_to_der().unwrap();
                         let private_key = rsa.private_key_to_der().unwrap();
+                        //let public_keyu8: &[u8] = &private_key; // c: &[u8]
+                        let x509 = X509::from_der(&public_key).unwrap();
 
                         let private_pem = Pem::new("RSA PRIVATE KEY", private_key);
                         let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
 
                         kp["PrivateKey"] = json::JsonValue::String(private);
+                        json["KeypairFingerprint"] = json::JsonValue::String(x509.digest(MessageDigest::md5()).unwrap().escape_ascii().to_string());
                     } else {
                         return bad_argument(req_id, json, "KeypairName Missing")
                     }
