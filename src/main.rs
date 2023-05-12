@@ -16,9 +16,9 @@ use sha2::{Digest, Sha256};
 use hmac::{Hmac, Mac};
 use simple_hyper_server_tls::*;
 use openssl::rsa::Rsa;
-use openssl::x509::X509;
 use pem::{Pem, encode_config, EncodeConfig, LineEnding};
-use openssl::hash::MessageDigest;
+//use openssl::x509::X509;
+//use openssl::hash::MessageDigest;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -638,16 +638,16 @@ async fn handler(req: Request<Body>,
                         kp["KeypairName"] = json::JsonValue::String(name);
                         let rsa = Rsa::generate(2048).unwrap();
 
-                        let public_key = rsa.public_key_to_der().unwrap();
+                        // let public_key = rsa.public_key_to_der().unwrap();
                         let private_key = rsa.private_key_to_der().unwrap();
                         //let public_keyu8: &[u8] = &private_key; // c: &[u8]
-                        let x509 = X509::from_der(&public_key).unwrap();
+                        // let x509 = X509::from_der(&public_key).unwrap();
 
                         let private_pem = Pem::new("RSA PRIVATE KEY", private_key);
                         let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
 
                         kp["PrivateKey"] = json::JsonValue::String(private);
-                        json["KeypairFingerprint"] = json::JsonValue::String(x509.digest(MessageDigest::md5()).unwrap().escape_ascii().to_string());
+                        //json["KeypairFingerprint"] = json::JsonValue::String(x509.digest(MessageDigest::md5()).unwrap().escape_ascii().to_string());
                     } else {
                         return bad_argument(req_id, json, "KeypairName Missing")
                     }
