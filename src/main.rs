@@ -735,26 +735,31 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
     let any_server = match tls {
-        true => hyper_from_pem_files("cert.pem", "key.pem", Protocols::ALL, &addr).unwrap().serve(
-            make_service_fn( move |_| { // first move it into the closure
-                // closure can be called multiple times, so for each call, we must
-                // clone it and move that clone into the async block
-                let connection = connection.clone();
-                let requet_id = requet_id.clone();
-                let cfg = cfg.clone();
-                async move {
-                    // async block is only executed once, so just pass it on to the closure
-                    Ok::<_, hyper::Error>(service_fn( move |_req| {
-                        let connection =  connection.clone();
-                        let id = requet_id.fetch_add(1, Ordering::Relaxed);
-                        let cfg = cfg.clone();
-                        // but this closure may also be called multiple times, so make
-                        // a clone for each call, and move the clone into the async block
-                        async move { handler(_req, &connection, id, &cfg).await }
-                    }))
-                }
-            })
-        ).await,
+        true => match hyper_from_pem_files("cert.pem", "key.pem", Protocols::ALL, &addr) {
+            Ok(server) => server.serve(
+                make_service_fn( move |_| { // first move it into the closure
+                    // closure can be called multiple times, so for each call, we must
+                    // clone it and move that clone into the async block
+                    println!("before handler -1");
+                    let connection = connection.clone();
+                    let requet_id = requet_id.clone();
+                    let cfg = cfg.clone();
+                    async move {
+                        // async block is only executed once, so just pass it on to the closure
+                        Ok::<_, hyper::Error>(service_fn( move |_req| {
+                            let connection =  connection.clone();
+                            let id = requet_id.fetch_add(1, Ordering::Relaxed);
+                            let cfg = cfg.clone();
+                            println!("before handler");
+                            // but this closure may also be called multiple times, so make
+                            // a clone for each call, and move the clone into the async block
+                            async move { handler(_req, &connection, id, &cfg).await }
+                        }))
+                    }
+                })
+            ).await,
+            _ => {eprintln!("server failt to create with tls (bad key ?)"); return }
+        },
         _ => Server::bind(&addr).serve(
             make_service_fn( move |_| {
                 let connection = connection.clone();
