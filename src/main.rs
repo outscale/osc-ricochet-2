@@ -85,20 +85,24 @@ fn remove_duplicate_slashes(path: &str) -> String {
 enum RicCall {
     Root,
     Debug,
+
     CreateNet,
     CreateKeypair,
-    ReadKeypairs,
-    DeleteKeypair,
-    ReadAccessKeys,
     CreateVms,
-    ReadVms,
     DeleteVms,
     CreateTags,
     CreateFlexibleGpu,
     CreateImage,
+
+    DeleteKeypair,
+
+    ReadAccessKeys,
+    ReadFlexibleGpus,
     ReadImages,
+    ReadKeypairs,
     ReadLoadBalancers,
-    ReadFlexibleGpus
+    ReadVms,
+    ReadVolumes
 }
 
 impl FromStr for RicCall {
@@ -135,6 +139,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateImage),
             "/ReadImages" | "/api/v1/ReadImages" | "/api/latest/ReadImages" =>
                 Ok(RicCall::ReadImages),
+            "/ReadVolumes" | "/api/v1/ReadVolumes" | "/api/latest/ReadVolumes" =>
+                Ok(RicCall::ReadVolumes),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
                 Ok(RicCall::ReadLoadBalancers),
             "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
@@ -582,6 +588,14 @@ async fn handler(req: Request<Body>,
 
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
+        (&Method::POST, Ok(RicCall::ReadVolumes))  => {
+
+            let user_imgs = &main_json[user_id]["Volumes"];
+
+            json["Volumes"] = (*user_imgs).clone();
+
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
         (&Method::POST, Ok(RicCall::ReadLoadBalancers))  => {
 
             let user_vms = &main_json[user_id]["LoadBalancers"];
@@ -751,6 +765,7 @@ async fn main() {
             LoadBalancers: json::JsonValue::new_array(),
             Images: json::JsonValue::new_array(),
             Nets: json::JsonValue::new_array(),
+            Volumes: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
         }).unwrap();
     }
