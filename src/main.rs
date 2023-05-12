@@ -17,6 +17,8 @@ use hmac::{Hmac, Mac};
 use simple_hyper_server_tls::*;
 use openssl::rsa::Rsa;
 use pem::{Pem, encode_config, EncodeConfig, LineEnding};
+use ipnet::Ipv4Net;
+
 //use openssl::x509::X509;
 //use openssl::hash::MessageDigest;
 
@@ -52,7 +54,7 @@ fn bad_argument(req_id: usize ,mut json: json::JsonValue,
     Result<Response<Body>,Infallible> {
     let mut response = Response::new(Body::empty());
 
-    json["Error"] = error.into();
+        json["Errors"] = json::object!{Details: error};
     *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
     return Ok(response);
 
@@ -538,7 +540,20 @@ async fn handler(req: Request<Body>,
                 match in_json {
                     Ok(in_json) => {
                         if in_json.has_key("IpRange") {
-                            net["IpRange"] = in_json["IpRange"].clone();
+                            let iprange = in_json["IpRange"].as_str().unwrap();
+
+                            let net_st: Result<Ipv4Net, _> = iprange.parse();
+
+                            match net_st {
+                                Ok(range) => {
+                                    if range.prefix_len() != 16 && range.prefix_len() != 28 {
+                                        return bad_argument(req_id, json, "iprange size is nope")
+                                    }
+                                    net["IpRange"] = iprange.clone().into()
+                                },
+                                _ => return bad_argument(req_id, json,
+                                                         "you range is pure &@*$ i meam invalide")
+                            }
                         } else {
                             return bad_argument(req_id, json, "l'IpRange wesh !");
                         }

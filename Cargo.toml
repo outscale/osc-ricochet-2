@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 hyper = { version = "0.14", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
+ipnet = "2.7.2"
 sha2 = "0.10.6"
 futures = "0.3"
 json = "0.12.4"
@@ -14,4 +15,4 @@ base64 = "0.21.0"
 hmac = "0.12.1"
 pem = "2.0.1"
 openssl = "0.10.52"
-simple-hyper-server-tls = { version = "0.3.2", features = ["tls-rustls"]}
+simple-hyper-server-tls = { version = "0.3.2", features = ["tls-openssl"]}
