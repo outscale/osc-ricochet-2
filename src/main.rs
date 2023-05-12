@@ -85,6 +85,7 @@ fn remove_duplicate_slashes(path: &str) -> String {
 enum RicCall {
     Root,
     Debug,
+    CreateNet,
     CreateKeypair,
     ReadKeypairs,
     DeleteKeypair,
@@ -136,6 +137,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadImages),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
                 Ok(RicCall::ReadLoadBalancers),
+            "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
+                Ok(RicCall::CreateNet),
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
@@ -518,6 +521,34 @@ async fn handler(req: Request<Body>,
             json["Images"] = json::array!{image};
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
+        (&Method::POST, Ok(RicCall::CreateNet)) => {
+            let net_id = format!("vpc-{:08}", req_id);
+            let mut net = json::object!{
+                NetId: net_id
+            };
+
+            if !bytes.is_empty() {
+                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                match in_json {
+                    Ok(in_json) => {
+                        if in_json.has_key("IpRange") {
+                            net["IpRange"] = in_json["IpRange"].clone();
+                        } else {
+                            return bad_argument(req_id, json, "l'IpRange wesh !");
+                        }
+                    },
+                    Err(_) => {
+                        return bad_argument(req_id, json, "Invalide json");
+                    }
+                }
+            } else {
+                return bad_argument(req_id, json, "l'IpRange wesh !");
+            }
+            main_json[user_id]["Nets"].push(
+                net.clone()).unwrap();
+            json["Nets"] = json::array!{net};
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
         (&Method::POST, Ok(RicCall::ReadKeypairs))  => {
 
             let user_kps = &main_json[user_id]["Keypairs"];
@@ -719,6 +750,7 @@ async fn main() {
             FlexibleGpus: json::JsonValue::new_array(),
             LoadBalancers: json::JsonValue::new_array(),
             Images: json::JsonValue::new_array(),
+            Nets: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
         }).unwrap();
     }
