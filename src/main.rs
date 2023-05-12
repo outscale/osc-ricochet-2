@@ -88,6 +88,7 @@ enum RicCall {
     CreateKeypair,
     ReadKeypairs,
     DeleteKeypair,
+    ReadAccessKeys,
     CreateVms,
     ReadVms,
     DeleteVms,
@@ -115,6 +116,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadKeypairs),
             "/DeleteKeypair" | "/api/v1/DeleteKeypair" | "/api/latest/DeleteKeypair" =>
                 Ok(RicCall::DeleteKeypair),
+            "/ReadAccessKeys" | "/api/v1/ReadAccessKeys" | "/api/latest/ReadAccessKeys" =>
+                Ok(RicCall::ReadAccessKeys),
             "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" =>
                 Ok(RicCall::ReadVms),
             "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" =>
@@ -163,6 +166,7 @@ async fn handler(req: Request<Body>,
     let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
     let users = &cfg["users"];
 
+    println!("in handler");
     if cfg["auth_type"] != "none" {
         let auth_type = match cfg["auth_type"].as_str().unwrap() {
             "exist" => 0,
@@ -524,6 +528,18 @@ async fn handler(req: Request<Body>,
                 k.remove("PrivateKey");
             }
             json["Keypairs"] = kps;
+
+            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+        },
+        (&Method::POST, Ok(RicCall::ReadAccessKeys))  => {
+
+            json["AccessKeys"] = json::array![
+                json::object!{
+                    State:"ACTIVE",
+                    AccessKeyId: users[user_id]["access_key"].clone(),
+                    CreationDate:"2020-01-28T10:58:41.000Z",
+                    LastModificationDate:"2020-01-28T10:58:41.000Z"
+            }];
 
             *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
         },
