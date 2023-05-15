@@ -101,6 +101,7 @@ enum RicCall {
     DeleteKeypair,
 
     ReadAccessKeys,
+    ReadAccounts,
     ReadFlexibleGpus,
     ReadImages,
     ReadKeypairs,
@@ -341,6 +342,32 @@ impl RicCall {
 
                 *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
             },
+            RicCall::ReadAccounts  => {
+                let email = users[user_id]["login"].clone();
+
+                json["Accounts"] =
+                    json::array![
+                        json::object!{
+                            City:"カカリコ",
+                            CompanyName: "plouf",
+                            Country: "ハイラル",
+                            CustomerId: user_id,
+                            Email: match email.is_null() {
+                                true => "RICOCHET_UNKNOW.???",
+                                _ => email.as_str().unwrap()
+                            },
+                            FirstName: "oui",
+                            JobTitle: "bu__3hit",
+                            LastName: "non",
+                            MobileNumber: "06 > 07",
+                            PhoneNumber: "011 8 999 881 99 911 9 725...3",
+                            StateProvince: "ok",
+                            VatNumber: "the fuck ?",
+                            ZipCode: "5"
+                    }];
+
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
             RicCall::ReadImages  => {
 
                 let user_imgs = &main_json[user_id]["Images"];
@@ -524,6 +551,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateFlexibleGpu),
             "/CreateImage" | "/api/v1/CreateImage" | "/api/latest/CreateImage" =>
                 Ok(RicCall::CreateImage),
+            "/ReadAccounts" | "/api/v1/ReadAccounts" | "/api/latest/ReadAccounts" =>
+                Ok(RicCall::ReadAccounts),
             "/ReadImages" | "/api/v1/ReadImages" | "/api/latest/ReadImages" =>
                 Ok(RicCall::ReadImages),
             "/ReadVolumes" | "/api/v1/ReadVolumes" | "/api/latest/ReadVolumes" =>
@@ -561,6 +590,7 @@ async fn handler(req: Request<Body>,
     let users = &cfg["users"];
 
     println!("in handler");
+
     if cfg["auth_type"] != "none" {
         let mut response = Response::new(Body::empty());
 
@@ -762,8 +792,20 @@ async fn handler(req: Request<Body>,
             return bad_auth("\"Authorization Header wrong Format\"".to_string());
         }
     }
+
+    let to_call = match cfg["in_convertion"] == true {
+        true => {
+            let ret = match uri.path() {
+                "/CreateKeypair" | "/api/v1/CreateKeypair" | "/api/latest/CreateKeypair" => Ok(RicCall::ReadAccounts),
+                _ => RicCall::from_str(uri.path())
+            };
+            ret
+        },
+        _ => RicCall::from_str(uri.path())
+    };
+
     // match (req.method(), req.uri().path())
-    match RicCall::from_str(uri.path()) {
+    match to_call {
         Ok(which_call) => which_call.eval(
             main_json, cfg, bytes, user_id, req_id, headers
         ),
