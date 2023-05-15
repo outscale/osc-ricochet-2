@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use futures::lock::Mutex;
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Method, StatusCode};
+use hyper::{StatusCode};
 use base64::{engine::general_purpose, Engine as _};
 //use hyper::header::{Headers, Authorization};
 use std::str::FromStr;
@@ -84,6 +84,8 @@ fn remove_duplicate_slashes(path: &str) -> String {
     }
     new_path
 }
+
+#[derive(Debug)]
 enum RicCall {
     Root,
     Debug,
@@ -106,6 +108,389 @@ enum RicCall {
     ReadVms,
     ReadVolumes
 }
+
+impl RicCall {
+    fn eval(&self,
+            mut main_json: futures::lock::MutexGuard<'_, json::JsonValue, >,
+            cfg: futures::lock::MutexGuard<'_, json::JsonValue, >,
+            bytes: hyper::body::Bytes,
+            user_id: usize,
+            req_id: usize,
+            headers: hyper::HeaderMap<hyper::header::HeaderValue>)
+            -> Result<Response<Body>, Infallible> {
+        let mut json = json::JsonValue::new_object();
+        let users = &cfg["users"];
+        let mut response = Response::new(Body::empty());
+
+        println!("RicCall eval: {:?}", *self);
+
+        match *self {
+            RicCall::Root => {
+                *response.body_mut() = Body::from("Try POSTing to /ReadVms");
+            },
+            RicCall::Debug => {
+                let hdr = format!("{:?}", headers);
+                *response.body_mut() = Body::from(format!("data: {}\nheaders: {}\n",
+                                                          String::from_utf8(bytes.to_vec()).unwrap(),
+                                                          hdr));
+            },
+            RicCall::ReadVms  => {
+
+                let user_vms = &main_json[user_id]["Vms"];
+
+                json["Vms"] = (*user_vms).clone();
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("Filters") {
+                                let filter = &in_json["Filters"];
+
+                                json["Vms"] = json::JsonValue::new_array();
+
+                                for vm in user_vms.members() {
+                                    let mut need_add = true;
+
+                                    need_add = have_request_filter(filter, vm,
+                                                                   "VmIds", "VmId", need_add);
+                                    need_add = have_request_filter(filter, vm,
+                                                                   "TagValues", "VmType", need_add);
+                                    need_add = have_request_filter(filter, vm,
+                                                                   "TagKeys", "VmId", need_add);
+                                    if need_add {
+                                        json["Vms"].push((*vm).clone()).unwrap();
+                                    }
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                }
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::DeleteVms  => {
+
+                let user_vms = &mut main_json[user_id]["Vms"];
+
+                json["Vms"] = (*user_vms).clone();
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("VmIds") {
+                                let ids = &in_json["VmIds"];
+
+                                json["Vms"] = json::JsonValue::new_array();
+                                let mut idx = 0;
+                                let mut rm_array = vec![];
+                                for vm in user_vms.members() {
+                                    let mut need_rm = true;
+
+                                    for id in ids.members() {
+                                        if *id == vm["VmId"] {
+                                            need_rm = true;
+                                        }
+                                    }
+                                    if need_rm {
+                                        json["Vms"].push((*vm).clone()).unwrap();
+                                        rm_array.push(idx);
+                                    }
+                                    idx += 1;
+                                }
+                                for i in rm_array {
+                                    user_vms.array_remove(i);
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                }
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::DeleteKeypair  => {
+
+                let user_kps = &mut main_json[user_id]["Keypairs"];
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("KeypairName") {
+                                let name = &in_json["KeypairName"];
+
+                                let mut idx = 0;
+                                let mut rm = false;
+                                for vm in user_kps.members() {
+                                    if *name == vm["KeypairName"] {
+                                        rm = true;
+                                        break;
+                                    }
+                                    idx += 1;
+                                }
+                                if rm {
+                                    user_kps.array_remove(idx);
+                                }
+                            } else {
+                                return bad_argument(req_id, json, "KeypairName Missing")
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                }
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::CreateImage => {
+                let image_id = format!("ami-{:08}", req_id);
+                let mut image = json::object!{
+                    AccountId: user_id,
+                    ImageId: image_id
+                };
+                if !users[user_id]["login"].is_null() {
+                    image["AccountAlias"] = users[user_id]["login"].clone()
+                }
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("ImageName") {
+                                image["ImageName"] = in_json["ImageName"].clone();
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                }
+                main_json[user_id]["Images"].push(
+                    image.clone()).unwrap();
+                json["Images"] = json::array!{image};
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::CreateNet => {
+                let net_id = format!("vpc-{:08}", req_id);
+                let mut net = json::object!{
+                    NetId: net_id
+                };
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("IpRange") {
+                                let iprange = in_json["IpRange"].as_str().unwrap();
+
+                                let net_st: Result<Ipv4Net, _> = iprange.parse();
+
+                                match net_st {
+                                    Ok(range) => {
+                                        if range.prefix_len() != 16 && range.prefix_len() != 28 {
+                                            return bad_argument(req_id, json, "iprange size is nope")
+                                        }
+                                        net["IpRange"] = iprange.clone().into()
+                                    },
+                                    _ => return bad_argument(req_id, json,
+                                                             "you range is pure &@*$ i meam invalide")
+                                }
+                            } else {
+                                return bad_argument(req_id, json, "l'IpRange wesh !");
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                } else {
+                    return bad_argument(req_id, json, "l'IpRange wesh !");
+                }
+                main_json[user_id]["Nets"].push(
+                    net.clone()).unwrap();
+                json["Nets"] = json::array!{net};
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::ReadKeypairs => {
+
+                let user_kps = &main_json[user_id]["Keypairs"];
+
+                let mut kps = (*user_kps).clone();
+
+                for k in kps.members_mut() {
+                    k.remove("PrivateKey");
+                }
+                json["Keypairs"] = kps;
+
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::ReadAccessKeys  => {
+
+                json["AccessKeys"] = json::array![
+                    json::object!{
+                        State:"ACTIVE",
+                        AccessKeyId: users[user_id]["access_key"].clone(),
+                        CreationDate:"2020-01-28T10:58:41.000Z",
+                        LastModificationDate:"2020-01-28T10:58:41.000Z"
+                    }];
+
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::ReadImages  => {
+
+                let user_imgs = &main_json[user_id]["Images"];
+
+                json["Images"] = (*user_imgs).clone();
+
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::ReadVolumes  => {
+
+                let user_imgs = &main_json[user_id]["Volumes"];
+
+                json["Volumes"] = (*user_imgs).clone();
+
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::ReadLoadBalancers  => {
+
+                let user_vms = &main_json[user_id]["LoadBalancers"];
+
+                json["LoadBalancers"] = (*user_vms).clone();
+
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::ReadFlexibleGpus  => {
+
+                let user_fgpus = &main_json[user_id]["FlexibleGpus"];
+
+                json["FlexibleGpus"] = (*user_fgpus).clone();
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("Filters") {
+                                let filter = &in_json["Filters"];
+
+                                json["FlexibleGpus"] = json::JsonValue::new_array();
+
+                                for fgpu in user_fgpus.members() {
+                                    let mut need_add = true;
+
+                                    need_add = have_request_filter(filter, fgpu,
+                                                                   "FlexibleGpuIds",
+                                                                   "FlexibleGpuId", need_add);
+                                    if need_add {
+                                        json["FlexibleGpus"].push((*fgpu).clone()).unwrap();
+                                    }
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalid JSON format")
+                        }
+                    }
+                }
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::CreateKeypair => {
+                let mut kp = json::object!{};
+                match json::parse(std::str::from_utf8(&bytes).unwrap()) {
+                    Ok(in_json) => {
+                        if in_json.has_key("KeypairName") {
+                            let name = in_json["KeypairName"].to_string();
+                            for k in main_json[user_id]["Keypairs"].members() {
+                                if k["KeypairName"].to_string() == name {
+                                    return bad_argument(req_id, json, "KeypairName Name conflict")
+                                }
+                            }
+                            kp["KeypairName"] = json::JsonValue::String(name);
+                            let rsa = Rsa::generate(2048).unwrap();
+
+                            // let public_key = rsa.public_key_to_der().unwrap();
+                            let private_key = rsa.private_key_to_der().unwrap();
+                            //let public_keyu8: &[u8] = &private_key; // c: &[u8]
+                            // let x509 = X509::from_der(&public_key).unwrap();
+
+                            let private_pem = Pem::new("RSA PRIVATE KEY", private_key);
+                            let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
+
+                            kp["PrivateKey"] = json::JsonValue::String(private);
+                            //json["KeypairFingerprint"] = json::JsonValue::String(x509.digest(MessageDigest::md5()).unwrap().escape_ascii().to_string());
+                        } else {
+                            return bad_argument(req_id, json, "KeypairName Missing")
+                        }
+                    },
+                    Err(_) => {
+                        return bad_argument(req_id, json, "Invalid JSON format")
+                    }
+                }
+                main_json[user_id]["Keypairs"].push(
+                    kp.clone()).unwrap();
+                json["Keypair"] = kp;
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::CreateVms => {
+                let vm_id = format!("i-{:08}", req_id);
+                let vm = json::object!{
+                    VmType: "small",
+                    VmId: vm_id
+                };
+
+                main_json[user_id]["Vms"].push(
+                    vm.clone()).unwrap();
+                json["Vms"] = json::array!{vm};
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::CreateTags => {
+                if bytes.is_empty() {
+                    return bad_argument(req_id, json, "Create Tags require: 'ResourceIds', 'Tags' argument");
+                }
+
+                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                match in_json {
+                    Ok(in_json) => {
+                        println!("{:#}", in_json.dump());
+                        if !in_json.has_key("Tags") && !in_json.has_key("ResourceIds") {
+                            return bad_argument(req_id, json, "Create Tags require: ResourceIds, Tags argument");
+                        }
+                    },
+                    Err(_) => {
+                        return bad_argument(req_id, json, "Invalide json");
+                    }
+                }
+                println!("CreateTags");
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            },
+            RicCall::CreateFlexibleGpu => {
+                let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
+                let fgpu_json = json::object!{
+                    DeleteOnVmDeletion: false,
+                    FlexibleGpuId: format!("fgpu-{:08}", req_id),
+                    Generation: "Wololo",
+                    ModelName: "XOXO",
+                    State: "imaginary",
+                    SubregionName: "yes",
+                    VmId: "unlink"
+                };
+
+
+                println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
+                json["FlexibleGpu"] = json::array!{fgpu_json.clone()};
+                user_fgpu.push(fgpu_json).unwrap();
+                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+            }
+        };
+        Ok(response)
+    }
+}
+
 
 impl FromStr for RicCall {
     type Err = ();
@@ -166,19 +551,19 @@ async fn handler(req: Request<Body>,
                  req_id: usize,
                  cfg: & Arc<futures::lock::Mutex<json::JsonValue>>)
                  -> Result<Response<Body>, Infallible> {
-    let mut response = Response::new(Body::empty());
-    let mut json = json::JsonValue::new_object();
-    let mut main_json = connection.lock().await;
+    let main_json = connection.lock().await;
     let cfg = cfg.lock().await;
     let headers = req.headers().clone();
     let mut user_id = 0;
-    let method = req.method().clone();
+    //let method = req.method().clone();
     let uri = req.uri().clone();
     let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
     let users = &cfg["users"];
 
     println!("in handler");
     if cfg["auth_type"] != "none" {
+        let mut response = Response::new(Body::empty());
+
         let auth_type = match cfg["auth_type"].as_str().unwrap() {
             "exist" => 0,
             "headarches" => 1,
@@ -378,376 +763,17 @@ async fn handler(req: Request<Body>,
         }
     }
     // match (req.method(), req.uri().path())
-    match (&method, RicCall::from_str(uri.path())) {
-        (&Method::GET, Ok(RicCall::Root)) => {
-            *response.body_mut() = Body::from("Try POSTing to /ReadVms");
-        },
-        (&Method::POST, Ok(RicCall::Debug)) => {
-            let hdr = format!("{:?}", headers);
-            *response.body_mut() = Body::from(format!("data: {}\nheaders: {}\n",
-                                                      String::from_utf8(bytes.to_vec()).unwrap(),
-                                                      hdr));
-        },
-        (&Method::POST, Ok(RicCall::ReadVms))  => {
-
-            let user_vms = &main_json[user_id]["Vms"];
-
-            json["Vms"] = (*user_vms).clone();
-
-            if !bytes.is_empty() {
-                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                match in_json {
-                    Ok(in_json) => {
-                        if in_json.has_key("Filters") {
-                            let filter = &in_json["Filters"];
-
-                            json["Vms"] = json::JsonValue::new_array();
-
-                            for vm in user_vms.members() {
-                                let mut need_add = true;
-
-                                need_add = have_request_filter(filter, vm,
-                                                               "VmIds", "VmId", need_add);
-                                need_add = have_request_filter(filter, vm,
-                                                               "TagValues", "VmType", need_add);
-                                need_add = have_request_filter(filter, vm,
-                                                               "TagKeys", "VmId", need_add);
-                                if need_add {
-                                    json["Vms"].push((*vm).clone()).unwrap();
-                                }
-                            }
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalide json");
-                    }
-                }
-            }
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::DeleteVms))  => {
-
-            let user_vms = &mut main_json[user_id]["Vms"];
-
-            json["Vms"] = (*user_vms).clone();
-
-            if !bytes.is_empty() {
-                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                match in_json {
-                    Ok(in_json) => {
-                        if in_json.has_key("VmIds") {
-                            let ids = &in_json["VmIds"];
-
-                            json["Vms"] = json::JsonValue::new_array();
-                            let mut idx = 0;
-                            let mut rm_array = vec![];
-                            for vm in user_vms.members() {
-                                let mut need_rm = true;
-
-                                for id in ids.members() {
-                                    if *id == vm["VmId"] {
-                                        need_rm = true;
-                                    }
-                                }
-                                if need_rm {
-                                    json["Vms"].push((*vm).clone()).unwrap();
-                                    rm_array.push(idx);
-                                }
-                                idx += 1;
-                            }
-                            for i in rm_array {
-                                user_vms.array_remove(i);
-                            }
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalide json");
-                    }
-                }
-            }
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::DeleteKeypair))  => {
-
-            let user_kps = &mut main_json[user_id]["Keypairs"];
-
-            if !bytes.is_empty() {
-                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                match in_json {
-                    Ok(in_json) => {
-                        if in_json.has_key("KeypairName") {
-                            let name = &in_json["KeypairName"];
-
-                            let mut idx = 0;
-                            let mut rm = false;
-                            for vm in user_kps.members() {
-                                if *name == vm["KeypairName"] {
-                                    rm = true;
-                                    break;
-                                }
-                                idx += 1;
-                            }
-                            if rm {
-                                user_kps.array_remove(idx);
-                            }
-                        } else {
-                            return bad_argument(req_id, json, "KeypairName Missing")
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalide json");
-                    }
-                }
-            }
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::CreateImage)) => {
-            let image_id = format!("ami-{:08}", req_id);
-            let mut image = json::object!{
-                AccountId: user_id,
-                ImageId: image_id
-            };
-            if !users[user_id]["login"].is_null() {
-                image["AccountAlias"] = users[user_id]["login"].clone()
-            }
-
-            if !bytes.is_empty() {
-                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                match in_json {
-                    Ok(in_json) => {
-                        if in_json.has_key("ImageName") {
-                            image["ImageName"] = in_json["ImageName"].clone();
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalide json");
-                    }
-                }
-            }
-            main_json[user_id]["Images"].push(
-                image.clone()).unwrap();
-            json["Images"] = json::array!{image};
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::CreateNet)) => {
-            let net_id = format!("vpc-{:08}", req_id);
-            let mut net = json::object!{
-                NetId: net_id
-            };
-
-            if !bytes.is_empty() {
-                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                match in_json {
-                    Ok(in_json) => {
-                        if in_json.has_key("IpRange") {
-                            let iprange = in_json["IpRange"].as_str().unwrap();
-
-                            let net_st: Result<Ipv4Net, _> = iprange.parse();
-
-                            match net_st {
-                                Ok(range) => {
-                                    if range.prefix_len() != 16 && range.prefix_len() != 28 {
-                                        return bad_argument(req_id, json, "iprange size is nope")
-                                    }
-                                    net["IpRange"] = iprange.clone().into()
-                                },
-                                _ => return bad_argument(req_id, json,
-                                                         "you range is pure &@*$ i meam invalide")
-                            }
-                        } else {
-                            return bad_argument(req_id, json, "l'IpRange wesh !");
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalide json");
-                    }
-                }
-            } else {
-                return bad_argument(req_id, json, "l'IpRange wesh !");
-            }
-            main_json[user_id]["Nets"].push(
-                net.clone()).unwrap();
-            json["Nets"] = json::array!{net};
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::ReadKeypairs))  => {
-
-            let user_kps = &main_json[user_id]["Keypairs"];
-
-            let mut kps = (*user_kps).clone();
-
-            for k in kps.members_mut() {
-                k.remove("PrivateKey");
-            }
-            json["Keypairs"] = kps;
-
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::ReadAccessKeys))  => {
-
-            json["AccessKeys"] = json::array![
-                json::object!{
-                    State:"ACTIVE",
-                    AccessKeyId: users[user_id]["access_key"].clone(),
-                    CreationDate:"2020-01-28T10:58:41.000Z",
-                    LastModificationDate:"2020-01-28T10:58:41.000Z"
-            }];
-
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::ReadImages))  => {
-
-            let user_imgs = &main_json[user_id]["Images"];
-
-            json["Images"] = (*user_imgs).clone();
-
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::ReadVolumes))  => {
-
-            let user_imgs = &main_json[user_id]["Volumes"];
-
-            json["Volumes"] = (*user_imgs).clone();
-
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::ReadLoadBalancers))  => {
-
-            let user_vms = &main_json[user_id]["LoadBalancers"];
-
-            json["LoadBalancers"] = (*user_vms).clone();
-
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::ReadFlexibleGpus))  => {
-
-            let user_fgpus = &main_json[user_id]["FlexibleGpus"];
-
-            json["FlexibleGpus"] = (*user_fgpus).clone();
-
-                    if !bytes.is_empty() {
-                        let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                        match in_json {
-                            Ok(in_json) => {
-                                if in_json.has_key("Filters") {
-                                    let filter = &in_json["Filters"];
-
-                                    json["FlexibleGpus"] = json::JsonValue::new_array();
-
-                                    for fgpu in user_fgpus.members() {
-                                        let mut need_add = true;
-
-                                        need_add = have_request_filter(filter, fgpu,
-                                                                       "FlexibleGpuIds",
-                                                                       "FlexibleGpuId", need_add);
-                                        if need_add {
-                                            json["FlexibleGpus"].push((*fgpu).clone()).unwrap();
-                                        }
-                                    }
-                                }
-                            },
-                            Err(_) => {
-                                return bad_argument(req_id, json, "Invalid JSON format")
-                            }
-                        }
-                    }
-                    *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-                },
-        (&Method::POST, Ok(RicCall::CreateKeypair)) => {
-            let mut kp = json::object!{};
-            match json::parse(std::str::from_utf8(&bytes).unwrap()) {
-                Ok(in_json) => {
-                    if in_json.has_key("KeypairName") {
-                        let name = in_json["KeypairName"].to_string();
-                        for k in main_json[user_id]["Keypairs"].members() {
-                            if k["KeypairName"].to_string() == name {
-                                return bad_argument(req_id, json, "KeypairName Name conflict")
-                            }
-                        }
-                        kp["KeypairName"] = json::JsonValue::String(name);
-                        let rsa = Rsa::generate(2048).unwrap();
-
-                        // let public_key = rsa.public_key_to_der().unwrap();
-                        let private_key = rsa.private_key_to_der().unwrap();
-                        //let public_keyu8: &[u8] = &private_key; // c: &[u8]
-                        // let x509 = X509::from_der(&public_key).unwrap();
-
-                        let private_pem = Pem::new("RSA PRIVATE KEY", private_key);
-                        let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
-
-                        kp["PrivateKey"] = json::JsonValue::String(private);
-                        //json["KeypairFingerprint"] = json::JsonValue::String(x509.digest(MessageDigest::md5()).unwrap().escape_ascii().to_string());
-                    } else {
-                        return bad_argument(req_id, json, "KeypairName Missing")
-                    }
-                },
-                Err(_) => {
-                    return bad_argument(req_id, json, "Invalid JSON format")
-                }
-            };
-
-            main_json[user_id]["Keypairs"].push(
-                kp.clone()).unwrap();
-            json["Keypair"] = kp;
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::CreateVms)) => {
-            let vm_id = format!("i-{:08}", req_id);
-            let vm = json::object!{
-                    VmType: "small",
-                    VmId: vm_id
-                };
-
-            main_json[user_id]["Vms"].push(
-                vm.clone()).unwrap();
-            json["Vms"] = json::array!{vm};
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::CreateTags)) => {
-            if bytes.is_empty() {
-                return bad_argument(req_id, json, "Create Tags require: 'ResourceIds', 'Tags' argument");
-            }
-
-            let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-            match in_json {
-                Ok(in_json) => {
-                    println!("{:#}", in_json.dump());
-                    if !in_json.has_key("Tags") && !in_json.has_key("ResourceIds") {
-                        return bad_argument(req_id, json, "Create Tags require: ResourceIds, Tags argument");
-                    }
-                },
-                Err(_) => {
-                    return bad_argument(req_id, json, "Invalide json");
-                }
-            }
-            println!("CreateTags");
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
-        (&Method::POST, Ok(RicCall::CreateFlexibleGpu)) => {
-            let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
-            let fgpu_json = json::object!{
-                DeleteOnVmDeletion: false,
-                FlexibleGpuId: format!("fgpu-{:08}", req_id),
-                Generation: "Wololo",
-                ModelName: "XOXO",
-                State: "imaginary",
-                SubregionName: "yes",
-                VmId: "unlink"
-            };
-
-
-            println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
-            json["FlexibleGpu"] = json::array!{fgpu_json.clone()};
-            user_fgpu.push(fgpu_json).unwrap();
-            *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-        },
+    match RicCall::from_str(uri.path()) {
+        Ok(which_call) => which_call.eval(
+            main_json, cfg, bytes, user_id, req_id, headers
+        ),
         _ => {
+            let mut response = Response::new(Body::empty());
             println!("Unknow call {}", uri.path());
             *response.status_mut() = StatusCode::NOT_FOUND;
-       },
-    };
-
-    Ok(response)
+            Ok(response)
+        }
+    }
 }
 
 #[tokio::main]
