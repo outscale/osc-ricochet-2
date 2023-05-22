@@ -18,6 +18,7 @@ use simple_hyper_server_tls::*;
 use openssl::rsa::Rsa;
 use pem::{Pem, encode_config, EncodeConfig, LineEnding};
 use ipnet::Ipv4Net;
+use xml2json_rs::XmlBuilder;
 
 //use openssl::x509::X509;
 //use openssl::hash::MessageDigest;
@@ -51,18 +52,16 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
 
 fn bad_argument(req_id: usize ,mut json: json::JsonValue,
                 error:  &str) ->
-    Result<Response<Body>,Infallible> {
-    let mut response = Response::new(Body::empty());
-
+    (String, hyper::StatusCode) {
+        eprintln!("bad_argument: {}", error);
         json["Errors"] = json::object!{Details: error};
-    *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
-    return Ok(response);
-
+        (jsonobj_to_strret(json, req_id), StatusCode::OK)
 }
 
 fn bad_auth(error: String) -> Result<Response<Body>,Infallible> {
     let mut response = Response::new(Body::empty());
 
+    eprintln!("bad_auth: {}", error);
     response.headers_mut().append("WWW-Authenticate", "Basic".parse().unwrap());
     *response.body_mut() = Body::from(error);
     *response.status_mut() = StatusCode::UNAUTHORIZED;
@@ -83,6 +82,25 @@ fn remove_duplicate_slashes(path: &str) -> String {
         last_char = c;
     }
     new_path
+}
+
+fn ok_result(res: (String, StatusCode)) -> Result<Response<Body>, Infallible> {
+    let mut response = Response::new(Body::empty());
+
+    *response.status_mut() = res.1;
+    *response.body_mut() = Body::from(res.0);
+    return Ok(response)
+}
+
+fn try_conver_response(res: (String, StatusCode), need_convert: bool) -> (String, hyper::StatusCode) {
+    if need_convert == false {
+        return res
+    }
+
+    let mut xml_builder = XmlBuilder::default();
+    let xml = xml_builder.build_from_json_string(res.0.as_str());
+
+    return (xml.unwrap(), StatusCode::OK)
 }
 
 #[derive(Debug)]
@@ -118,22 +136,22 @@ impl RicCall {
             user_id: usize,
             req_id: usize,
             headers: hyper::HeaderMap<hyper::header::HeaderValue>)
-            -> Result<Response<Body>, Infallible> {
+            -> (String, hyper::StatusCode) {
         let mut json = json::JsonValue::new_object();
         let users = &cfg["users"];
-        let mut response = Response::new(Body::empty());
+        //let mut ret = ("could not happen", StatusCode::NOT_IMPLEMENTED);
 
         println!("RicCall eval: {:?}", *self);
 
         match *self {
             RicCall::Root => {
-                *response.body_mut() = Body::from("Try POSTing to /ReadVms");
+                ("Try POSTing to /ReadVms".to_string(), StatusCode::OK)
             },
             RicCall::Debug => {
                 let hdr = format!("{:?}", headers);
-                *response.body_mut() = Body::from(format!("data: {}\nheaders: {}\n",
-                                                          String::from_utf8(bytes.to_vec()).unwrap(),
-                                                          hdr));
+                (format!("data: {}\nheaders: {}\n",
+                               String::from_utf8(bytes.to_vec()).unwrap(),
+                               hdr), StatusCode::OK)
             },
             RicCall::ReadVms  => {
 
@@ -170,7 +188,7 @@ impl RicCall {
                         }
                     }
                 }
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::DeleteVms  => {
 
@@ -212,7 +230,7 @@ impl RicCall {
                         }
                     }
                 }
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::DeleteKeypair  => {
 
@@ -246,7 +264,7 @@ impl RicCall {
                         }
                     }
                 }
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateImage => {
                 let image_id = format!("ami-{:08}", req_id);
@@ -274,7 +292,7 @@ impl RicCall {
                 main_json[user_id]["Images"].push(
                     image.clone()).unwrap();
                 json["Images"] = json::array!{image};
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateNet => {
                 let net_id = format!("vpc-{:08}", req_id);
@@ -315,7 +333,7 @@ impl RicCall {
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
                 json["Nets"] = json::array!{net};
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadKeypairs => {
 
@@ -328,7 +346,7 @@ impl RicCall {
                 }
                 json["Keypairs"] = kps;
 
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadAccessKeys  => {
 
@@ -340,7 +358,7 @@ impl RicCall {
                         LastModificationDate:"2020-01-28T10:58:41.000Z"
                     }];
 
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadAccounts  => {
                 let email = users[user_id]["login"].clone();
@@ -366,7 +384,7 @@ impl RicCall {
                             ZipCode: "5"
                     }];
 
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadImages  => {
 
@@ -374,7 +392,7 @@ impl RicCall {
 
                 json["Images"] = (*user_imgs).clone();
 
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadVolumes  => {
 
@@ -382,7 +400,7 @@ impl RicCall {
 
                 json["Volumes"] = (*user_imgs).clone();
 
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadLoadBalancers  => {
 
@@ -390,7 +408,7 @@ impl RicCall {
 
                 json["LoadBalancers"] = (*user_vms).clone();
 
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadFlexibleGpus  => {
 
@@ -424,7 +442,7 @@ impl RicCall {
                         }
                     }
                 }
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateKeypair => {
                 let mut kp = json::object!{};
@@ -461,7 +479,7 @@ impl RicCall {
                 main_json[user_id]["Keypairs"].push(
                     kp.clone()).unwrap();
                 json["Keypair"] = kp;
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateVms => {
                 let vm_id = format!("i-{:08}", req_id);
@@ -473,7 +491,7 @@ impl RicCall {
                 main_json[user_id]["Vms"].push(
                     vm.clone()).unwrap();
                 json["Vms"] = json::array!{vm};
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateTags => {
                 if bytes.is_empty() {
@@ -493,7 +511,7 @@ impl RicCall {
                     }
                 }
                 println!("CreateTags");
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateFlexibleGpu => {
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
@@ -511,10 +529,9 @@ impl RicCall {
                 println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
                 json["FlexibleGpu"] = json::array!{fgpu_json.clone()};
                 user_fgpu.push(fgpu_json).unwrap();
-                *response.body_mut() = Body::from(jsonobj_to_strret(json, req_id));
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
             }
-        };
-        Ok(response)
+        }
     }
 }
 
@@ -567,6 +584,21 @@ impl FromStr for RicCall {
     }
 }
 
+fn is_v4<'a>(userpass: & 'a String) ->  Option<(&'a str, String)>
+{
+    let which: String;
+
+    if userpass.starts_with("OSC4") {
+        which = "OSC4".to_string();
+    } else if userpass.starts_with("AWS4") {
+        which = "AWS4".to_string();
+    } else {
+        return None
+    }
+
+    Some((userpass.strip_prefix(format!("{}-HMAC-SHA256 ", which).as_str()).unwrap(), which))
+}
+
 fn v4_error_ret(error_msg: &mut String, error:  &str) -> bool
 {
     *error_msg = "v4 error: ".to_string();
@@ -582,12 +614,13 @@ async fn handler(req: Request<Body>,
                  -> Result<Response<Body>, Infallible> {
     let main_json = connection.lock().await;
     let cfg = cfg.lock().await;
+    let method = req.method().clone();
     let headers = req.headers().clone();
     let mut user_id = 0;
-    //let method = req.method().clone();
     let uri = req.uri().clone();
-    let bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+    let mut bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
     let users = &cfg["users"];
+    let mut out_convertion = false;
 
     println!("in handler");
 
@@ -609,6 +642,7 @@ async fn handler(req: Request<Body>,
             }
         };
         let mut error_msg = "\"Unknow user\"".to_string();
+        let cred = is_v4(&userpass);
 
         if userpass.starts_with("Basic ") {
             let based = userpass.strip_prefix("Basic ").unwrap();
@@ -631,9 +665,10 @@ async fn handler(req: Request<Body>,
                     return Ok(response)
                 }
             }
-        } else if userpass.starts_with("OSC4-HMAC-SHA256") {
-            let cred = userpass.strip_prefix("OSC4-HMAC-SHA256 ").unwrap();
-            let cred = match cred.strip_prefix("Credential=") {
+        } else if cred != None {
+            let cred = cred.unwrap();
+            let which_v4 = cred.1;
+            let cred = match cred.0.strip_prefix("Credential=") {
                 Some(v) => v,
                 _ =>  return bad_auth("\"Authorization Header is broken, should start witgh 'Credential='\"".to_string())
             };
@@ -741,12 +776,12 @@ async fn handler(req: Request<Body>,
                 let mut hasher = Sha256::new();
                 hasher.update(canonical_request);
                 let canonical_request_sha = hasher.finalize();
-                let str_to_sign = format!("OSC4-HMAC-SHA256
+                let str_to_sign = format!("{}-HMAC-SHA256
 {}
 {}
-{:x}", x_date, credential_scope, canonical_request_sha);
+{:x}", which_v4, x_date, credential_scope, canonical_request_sha);
 
-                let mut hmac = match HmacSha256::new_from_slice(format!("OSC4{}", true_sk).as_bytes()) {
+                let mut hmac = match HmacSha256::new_from_slice(format!("{}{}", which_v4, true_sk).as_bytes()) {
                     Ok(v) => v,
                     _ => return false
                 };
@@ -796,7 +831,31 @@ async fn handler(req: Request<Body>,
     let to_call = match cfg["in_convertion"] == true {
         true => {
             let ret = match uri.path() {
-                "/CreateKeypair" | "/api/v1/CreateKeypair" | "/api/latest/CreateKeypair" => Ok(RicCall::ReadAccounts),
+                "/" => {
+
+                    let mut in_args = json::JsonValue::new_object();
+                    let args_str = std::str::from_utf8(&bytes).unwrap();
+                    let mut path = uri.path().clone();
+                    println!("{} ==== {:?}", args_str, method);
+                    let split = args_str.split('&');
+                    for s in split {
+                        let mut split = s.split('=');
+                        let key = split.nth(0).unwrap();
+                        let val = split.nth(0);
+
+                        println!("{} = {:?}", key, val);
+                        if key == "Action" {
+                            if val.unwrap() == "CreateKeyPair" {
+                                out_convertion = true;
+                                path = "/CreateKeypair"
+                            }
+                        } else if key == "KeyName" {
+                            in_args["KeypairName"] = val.unwrap().into()
+                        }
+                    }
+                    bytes = hyper::body::Bytes::from(in_args.dump());
+                    RicCall::from_str(path)
+                },
                 _ => RicCall::from_str(uri.path())
             };
             ret
@@ -805,10 +864,11 @@ async fn handler(req: Request<Body>,
     };
 
     // match (req.method(), req.uri().path())
+    println!("{:?}", to_call);
     match to_call {
-        Ok(which_call) => which_call.eval(
+        Ok(which_call) => ok_result(try_conver_response(which_call.eval(
             main_json, cfg, bytes, user_id, req_id, headers
-        ),
+        ), out_convertion)),
         _ => {
             let mut response = Response::new(Body::empty());
             println!("Unknow call {}", uri.path());

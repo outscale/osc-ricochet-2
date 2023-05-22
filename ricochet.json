@@ -1,5 +1,6 @@
 {
     "auth_type": "exist",
+    "in_convertion": true,
     "users": [
 	{
 	    "access_key": "11112211111110000000",
