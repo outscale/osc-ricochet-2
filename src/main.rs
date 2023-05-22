@@ -84,14 +84,6 @@ fn remove_duplicate_slashes(path: &str) -> String {
     new_path
 }
 
-fn ok_result(res: (String, StatusCode)) -> Result<Response<Body>, Infallible> {
-    let mut response = Response::new(Body::empty());
-
-    *response.status_mut() = res.1;
-    *response.body_mut() = Body::from(res.0);
-    return Ok(response)
-}
-
 fn try_conver_response(res: (String, StatusCode), need_convert: bool) -> (String, hyper::StatusCode) {
     if need_convert == false {
         return res
@@ -123,6 +115,7 @@ enum RicCall {
     ReadFlexibleGpus,
     ReadConsumptionAccount,
     ReadImages,
+    ReadDirectLinks,
     ReadKeypairs,
     ReadLoadBalancers,
     ReadVms,
@@ -395,6 +388,14 @@ impl RicCall {
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::ReadDirectLinks  => {
+
+                let user_dl = &main_json[user_id]["DirectLinks"];
+
+                json["DirectLinks"] = (*user_dl).clone();
+
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
             RicCall::ReadVolumes  => {
 
                 let user_imgs = &main_json[user_id]["Volumes"];
@@ -587,6 +588,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadAccounts),
             "/ReadImages" | "/api/v1/ReadImages" | "/api/latest/ReadImages" =>
                 Ok(RicCall::ReadImages),
+            "/ReadDirectLinks" | "/api/v1/ReadDirectLinks" | "/api/latest/ReadDirectLinks" =>
+                Ok(RicCall::ReadDirectLinks),
             "/ReadVolumes" | "/api/v1/ReadVolumes" | "/api/latest/ReadVolumes" =>
                 Ok(RicCall::ReadVolumes),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
@@ -717,8 +720,8 @@ async fn handler(req: Request<Body>,
                         x_date.to_str().unwrap().to_string()
                     }
                     _ =>  {
-                        println!("X-Osc-Date not found");
-                        return v4_error_ret(&mut error_msg, "X-Osc-Date not found");
+                        println!("Date hdr not found");
+                        return v4_error_ret(&mut error_msg, "Date hdr not found");
                     }
                 };
                 let host = match headers.get("Host") {
@@ -874,6 +877,12 @@ async fn handler(req: Request<Body>,
                         if in_json["Action"] == "ReadConsumptionAccount" {
                             path = "/ReadConsumptionAccount"
                         }
+                    } else if api == "directlink" {
+                        let action = headers.get("x-amz-target").unwrap();
+                        println!("{:?}", action);
+                        if action == "OvertureService.DescribeConnections" {
+                            path = "/ReadDirectLinks"
+                        }
                     } else if api != "api" {
                         let split = args_str.split('&');
                         for s in split {
@@ -907,9 +916,18 @@ async fn handler(req: Request<Body>,
     // match (req.method(), req.uri().path())
     println!("{:?}", to_call);
     match to_call {
-        Ok(which_call) => ok_result(try_conver_response(which_call.eval(
-            main_json, cfg, bytes, user_id, req_id, headers
-        ), out_convertion)),
+        Ok(which_call) => {
+            let res = try_conver_response(which_call.eval(
+                main_json, cfg, bytes, user_id, req_id, headers
+            ), out_convertion);
+            let mut response = Response::new(Body::empty());
+            if api == "directlink" {
+                response.headers_mut().append("x-amz-requestid", req_id.to_string().parse().unwrap());
+            }
+            *response.status_mut() = res.1;
+            *response.body_mut() = Body::from(res.0);
+            return Ok(response)
+        },
         _ => {
             let mut response = Response::new(Body::empty());
             println!("Unknow call {}", uri.path());
@@ -948,6 +966,7 @@ async fn main() {
             FlexibleGpus: json::JsonValue::new_array(),
             LoadBalancers: json::JsonValue::new_array(),
             Images: json::JsonValue::new_array(),
+            DirectLinks: json::JsonValue::new_array(),
             Nets: json::JsonValue::new_array(),
             Volumes: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
