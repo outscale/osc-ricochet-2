@@ -121,6 +121,7 @@ enum RicCall {
     ReadAccessKeys,
     ReadAccounts,
     ReadFlexibleGpus,
+    ReadConsumptionAccount,
     ReadImages,
     ReadKeypairs,
     ReadLoadBalancers,
@@ -410,6 +411,18 @@ impl RicCall {
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::ReadConsumptionAccount  => {
+                println!("RicCall::ReadConsumptionAccount !!!");
+                (jsonobj_to_strret(json::object!{
+                    ConsumptionEntries:
+                    json::array!{
+                        json::object!{
+                            AccountId: user_id,
+                            Value: 0
+                        }
+                    }
+                }, req_id), StatusCode::OK)
+            },
             RicCall::ReadFlexibleGpus  => {
 
                 let user_fgpus = &main_json[user_id]["FlexibleGpus"];
@@ -562,6 +575,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteVms),
             "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" =>
                 Ok(RicCall::ReadFlexibleGpus),
+            "/ReadConsumptionAccount" |"/api/v1/ReadConsumptionAccount" | "/api/latest/ReadConsumptionAccount" =>
+                Ok(RicCall::ReadConsumptionAccount),
             "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" =>
                 Ok(RicCall::CreateTags),
             "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" =>
@@ -584,7 +599,17 @@ impl FromStr for RicCall {
     }
 }
 
-fn is_v4<'a>(userpass: & 'a String) ->  Option<(&'a str, String)>
+fn which_v4_to_date<'a>(which_v4: & 'a String) -> &'a str
+{
+    if which_v4 == "OSC4" {
+        return "X-Osc-Date"
+    } else if which_v4 == "AWS4" {
+        return "X-Amz-Date"
+    }
+    return "X-Unknow-Date"
+}
+
+fn clasify_v4<'a>(userpass: & 'a String) ->  Option<(&'a str, String)>
 {
     let which: String;
 
@@ -621,6 +646,7 @@ async fn handler(req: Request<Body>,
     let mut bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
     let users = &cfg["users"];
     let mut out_convertion = false;
+    let mut api = "api".to_string();
 
     println!("in handler");
 
@@ -642,7 +668,7 @@ async fn handler(req: Request<Body>,
             }
         };
         let mut error_msg = "\"Unknow user\"".to_string();
-        let cred = is_v4(&userpass);
+        let cred = clasify_v4(&userpass);
 
         if userpass.starts_with("Basic ") {
             let based = userpass.strip_prefix("Basic ").unwrap();
@@ -682,15 +708,11 @@ async fn handler(req: Request<Body>,
             match users.members().position(|u| {
                 let ret = u["access_key"] == ak;
 
-                if auth_type < 1 || ret == false {
-                    return ret;
+                if ret == false {
+                    return false
                 }
 
-                let true_sk = match u["secret_key"].as_str() {
-                    Some(v) => v,
-                    _ => return v4_error_ret(&mut error_msg, "fail to get secret_key")
-                };
-                let x_date = match headers.get("X-Osc-Date") {
+                let x_date = match headers.get(which_v4_to_date(&which_v4)) {
                     Some(x_date) => {
                         x_date.to_str().unwrap().to_string()
                     }
@@ -722,7 +744,7 @@ async fn handler(req: Request<Body>,
                     Some((v, other)) => (v, other),
                     _ =>  return v4_error_ret(&mut error_msg, "missing '/'")
                 };
-                let api = tuple_cred.0;
+                api = tuple_cred.0.to_string();
                 let cred = tuple_cred.1;
 
                 let tuple_cred = match cred.split_once(',') {
@@ -742,6 +764,10 @@ async fn handler(req: Request<Body>,
                     Some(sign) => sign,
                     _ => return v4_error_ret(&mut error_msg, "missing 'Signature='")
                 };
+
+                if auth_type < 1 {
+                    return ret;
+                }
 
                 let mut hasher = Sha256::new();
                 hasher.update(bytes.clone());
@@ -780,6 +806,11 @@ async fn handler(req: Request<Body>,
 {}
 {}
 {:x}", which_v4, x_date, credential_scope, canonical_request_sha);
+
+                let true_sk = match u["secret_key"].as_str() {
+                    Some(v) => v,
+                    _ => return v4_error_ret(&mut error_msg, "fail to get secret_key")
+                };
 
                 let mut hmac = match HmacSha256::new_from_slice(format!("{}{}", which_v4, true_sk).as_bytes()) {
                     Ok(v) => v,
@@ -837,20 +868,30 @@ async fn handler(req: Request<Body>,
                     let args_str = std::str::from_utf8(&bytes).unwrap();
                     let mut path = uri.path().clone();
                     println!("{} ==== {:?}", args_str, method);
-                    let split = args_str.split('&');
-                    for s in split {
-                        let mut split = s.split('=');
-                        let key = split.nth(0).unwrap();
-                        let val = split.nth(0);
+                    if api == "icu" {
+                        let in_json = json::parse(args_str).unwrap();
 
-                        println!("{} = {:?}", key, val);
-                        if key == "Action" {
-                            if val.unwrap() == "CreateKeyPair" {
-                                out_convertion = true;
-                                path = "/CreateKeypair"
+                        if in_json["Action"] == "ReadConsumptionAccount" {
+                            path = "/ReadConsumptionAccount"
+                        }
+                    } else if api != "api" {
+                        let split = args_str.split('&');
+                        for s in split {
+                            let mut split = s.split('=');
+                            let key = split.nth(0).unwrap();
+                            let val = split.nth(0);
+
+                            println!("{} = {:?}", key, val);
+                            if key == "Action" {
+                                let action = val.unwrap();
+
+                                if action == "CreateKeyPair" {
+                                    out_convertion = true;
+                                    path = "/CreateKeypair"
+                                }
+                            } else if key == "KeyName" {
+                                in_args["KeypairName"] = val.unwrap().into()
                             }
-                        } else if key == "KeyName" {
-                            in_args["KeypairName"] = val.unwrap().into()
                         }
                     }
                     bytes = hyper::body::Bytes::from(in_args.dump());
