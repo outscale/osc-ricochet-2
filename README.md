@@ -12,3 +12,21 @@ but you're a free man, so you can try.
 if you want Ricochet to Rise and Shine, you need to have the right conf in the right place.
 
 1rst argumnent of ricochet is the configuration path. (see ./ricochet.json)
+
+# build
+
+```
+cargo build
+```
+
+# usage
+
+```
+cargo run [-- CONFIG.json]
+```
+
+for config see [this](./ricochet-headarches.json) and [that](./ricochet.json) as example
+
+# contribution
+
+You can open a PR, or an issue
