@@ -451,7 +451,15 @@ impl RicCall {
                         Err(_) => {
                             return bad_argument(req_id, json, "Invalid JSON format")
                         },
-                        Ok(_) => todo!()
+                        Ok(in_json) => {
+                            if in_json.has_key("Filters") {
+                                let filters = in_json["Filters"].clone();
+                                if !filters.is_array() {
+                                    return bad_argument(req_id, json, "Filter must be an array :p")
+                                }
+                            }
+                            todo!()
+                        }
                     }
                 }
                 json["Images"] = (*user_imgs).clone();
@@ -942,12 +950,23 @@ async fn handler(req: Request<Body>,
     let to_call = match cfg["in_convertion"] == true {
         true => {
             let ret = match uri.path() {
-                "/" => {
+                "/" | "/icu/" | "directlinks" | "fcu" => {
 
                     let mut in_args = json::JsonValue::new_object();
                     let args_str = std::str::from_utf8(&bytes).unwrap();
                     let mut path = uri.path().clone();
-                    println!("{} ==== {:?}", args_str, method);
+
+                    if path.contains("icu") {
+                        api = "icu".to_string()
+                    }
+                    if path.contains("directlinks") {
+                        api = "directlinks".to_string()
+                    }
+                    if path.contains("fcu") {
+                        api = "fcu".to_string()
+                    }
+
+                    println!("({}): {} ==== {:?}", api, args_str, method);
                     if api == "icu" {
                         let in_json = json::parse(args_str).unwrap();
 
@@ -964,22 +983,24 @@ async fn handler(req: Request<Body>,
                         if action == "OvertureService.DescribeConnections" {
                             path = "/ReadDirectLinks"
                         }
-                    } else if api != "api" {
+                    } else if api != "api" || unauth == true {
                         let split = args_str.split('&');
                         for s in split {
                             let mut split = s.split('=');
                             let key = split.nth(0).unwrap();
                             let val = split.nth(0);
 
-                            println!("{} = {:?}", key, val);
+                            println!("is {} = {:?}", key, val);
                             if key == "Action" {
                                 let action = val.unwrap();
 
                                 if action == "CreateKeyPair" {
                                     out_convertion = true;
+                                    api = "fcu".to_string();
                                     path = "/CreateKeypair"
                                 } else if action == "ReadPublicIpRanges" {
                                     out_convertion = true;
+                                    api = "fcu".to_string();
                                     path = "/ReadPublicIpRanges"
                                 }
                             } else if key == "KeyName" {
