@@ -445,7 +445,15 @@ impl RicCall {
             RicCall::ReadImages  => {
 
                 let user_imgs = &main_json[user_id]["Images"];
-
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalid JSON format")
+                        },
+                        Ok(_) => todo!()
+                    }
+                }
                 json["Images"] = (*user_imgs).clone();
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
@@ -713,7 +721,7 @@ async fn handler(req: Request<Body>,
     let method = req.method().clone();
     let headers = req.headers().clone();
     let mut user_id = 0;
-    let mut unauth = false; 
+    let mut unauth = false;
     let uri = req.uri().clone();
     let mut bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
     let users = &cfg["users"];
