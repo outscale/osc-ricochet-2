@@ -54,8 +54,8 @@ fn bad_argument(req_id: usize ,mut json: json::JsonValue,
                 error:  &str) ->
     (String, hyper::StatusCode) {
         eprintln!("bad_argument: {}", error);
-        json["Errors"] = json::object!{Details: error};
-        (jsonobj_to_strret(json, req_id), StatusCode::OK)
+        json["Errors"] = json::array![json::object!{Details: error}];
+        (jsonobj_to_strret(json, req_id), StatusCode::from_u16(400).unwrap())
 }
 
 fn bad_auth(error: String) -> Result<Response<Body>,Infallible> {
