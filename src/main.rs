@@ -119,23 +119,42 @@ enum RicCall {
     ReadKeypairs,
     ReadLoadBalancers,
     ReadVms,
-    ReadVolumes
+    ReadVolumes,
+
+    // Free Calls
+    ReadPublicCatalog,
+    ReadRegions,
+    ReadPublicIpRanges
 }
 
 impl RicCall {
+    fn is_free(&self) -> bool {
+        match *self {
+            RicCall::ReadPublicCatalog => true,
+            RicCall::ReadRegions => true,
+            RicCall::ReadPublicIpRanges => true,
+            _ => false
+        }
+    }
+
     fn eval(&self,
             mut main_json: futures::lock::MutexGuard<'_, json::JsonValue, >,
             cfg: futures::lock::MutexGuard<'_, json::JsonValue, >,
             bytes: hyper::body::Bytes,
             user_id: usize,
             req_id: usize,
-            headers: hyper::HeaderMap<hyper::header::HeaderValue>)
+            headers: hyper::HeaderMap<hyper::header::HeaderValue>,
+            unauth : bool)
             -> (String, hyper::StatusCode) {
         let mut json = json::JsonValue::new_object();
         let users = &cfg["users"];
         //let mut ret = ("could not happen", StatusCode::NOT_IMPLEMENTED);
 
         println!("RicCall eval: {:?}", *self);
+        if unauth && !self.is_free() {
+            eprintln!("{:?} require auth", *self);
+            return bad_argument(req_id, json, format!("{:?} require auth", *self).as_str())
+        }
 
         match *self {
             RicCall::Root => {
@@ -342,7 +361,7 @@ impl RicCall {
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
-            RicCall::ReadAccessKeys  => {
+            RicCall::ReadAccessKeys => {
 
                 json["AccessKeys"] = json::array![
                     json::object!{
@@ -351,6 +370,49 @@ impl RicCall {
                         CreationDate:"2020-01-28T10:58:41.000Z",
                         LastModificationDate:"2020-01-28T10:58:41.000Z"
                     }];
+
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
+            RicCall::ReadPublicCatalog => {
+
+                json["Catalogs"] = json::array![
+                    json::object!{
+                        Entries: json::array![
+                            json::object!{
+                                Category: "Mecha",
+                                Flags: "Red and Yellow",
+                                Operation: "Explain in the Opening",
+                                Service: "Protect Childs",
+                                SubregionName: "univer",
+                                Title: "イデオン",
+                                Type: "Kyoshin",
+                                UnitPrice: -1
+                            }
+                        ],
+                        FromDate:"2020-01-28T10:58:41Z",
+                        State: "CUR_ANT",
+                        ToDate: "2019-08-24T14:15:22Z"
+                    }];
+
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
+            RicCall::ReadPublicIpRanges  => {
+
+                json["PublicIps"] = json::array![
+                    "43.41.44.22/24",
+                    "34.14.44.22/24"
+                ];
+
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
+            RicCall::ReadRegions  => {
+
+                json["Regions"] = json::array![
+                    json::object!{
+                        Endpoint: "127.0.0.1:3000",
+                        RegionName: "mud-half-3"
+                    }
+                ];
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
@@ -594,6 +656,12 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadVolumes),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
                 Ok(RicCall::ReadLoadBalancers),
+            "/ReadPublicCatalog" | "/api/v1/ReadPublicCatalog" | "/api/latest/ReadPublicCatalog" =>
+                Ok(RicCall::ReadPublicCatalog),
+            "/ReadRegions" | "/api/v1/ReadRegions" | "/api/latest/ReadRegions" =>
+                Ok(RicCall::ReadRegions),
+            "/ReadPublicIpRanges" | "/api/v1/ReadPublicIpRanges" | "/api/latest/ReadPublicIpRanges" =>
+                Ok(RicCall::ReadPublicIpRanges),
             "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
                 Ok(RicCall::CreateNet),
             "/debug" => Ok(RicCall::Debug),
@@ -645,6 +713,7 @@ async fn handler(req: Request<Body>,
     let method = req.method().clone();
     let headers = req.headers().clone();
     let mut user_id = 0;
+    let mut unauth = false; 
     let uri = req.uri().clone();
     let mut bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
     let users = &cfg["users"];
@@ -666,8 +735,8 @@ async fn handler(req: Request<Body>,
                 auth.to_str().unwrap().to_string()
             }
             _ =>  {
-                println!("Authorization not found");
-                return bad_auth("\"Authorization Header require\"".to_string());
+                unauth = true;
+                "".to_string()
             }
         };
         let mut error_msg = "\"Unknow user\"".to_string();
@@ -857,7 +926,7 @@ async fn handler(req: Request<Body>,
                 }
             }
 
-        } else {
+        } else if !unauth {
             return bad_auth("\"Authorization Header wrong Format\"".to_string());
         }
     }
@@ -876,6 +945,8 @@ async fn handler(req: Request<Body>,
 
                         if in_json["Action"] == "ReadConsumptionAccount" {
                             path = "/ReadConsumptionAccount"
+                        } else if in_json["Action"] == "ReadPublicCatalog" {
+                            path = "/ReadPublicCatalog"
                         }
                     } else if api == "directlink" {
                         let action = headers.get("x-amz-target").unwrap();
@@ -897,6 +968,9 @@ async fn handler(req: Request<Body>,
                                 if action == "CreateKeyPair" {
                                     out_convertion = true;
                                     path = "/CreateKeypair"
+                                } else if action == "ReadPublicIpRanges" {
+                                    out_convertion = true;
+                                    path = "/ReadPublicIpRanges"
                                 }
                             } else if key == "KeyName" {
                                 in_args["KeypairName"] = val.unwrap().into()
@@ -918,7 +992,8 @@ async fn handler(req: Request<Body>,
     match to_call {
         Ok(which_call) => {
             let res = try_conver_response(which_call.eval(
-                main_json, cfg, bytes, user_id, req_id, headers
+                main_json, cfg, bytes, user_id, req_id, headers,
+                unauth
             ), out_convertion);
             let mut response = Response::new(Body::empty());
             if api == "directlink" {
