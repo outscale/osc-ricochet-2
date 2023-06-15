@@ -117,9 +117,11 @@ enum RicCall {
     ReadImages,
     ReadDirectLinks,
     ReadKeypairs,
+    ReadNets,
     ReadLoadBalancers,
     ReadVms,
     ReadVolumes,
+    ReadQuotas,
 
     // Free Calls
     ReadPublicCatalog,
@@ -358,6 +360,19 @@ impl RicCall {
                     k.remove("PrivateKey");
                 }
                 json["Keypairs"] = kps;
+
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
+            RicCall::ReadNets => {
+
+                let user_kps = &main_json[user_id]["Nets"];
+
+                let mut kps = (*user_kps).clone();
+
+                for k in kps.members_mut() {
+                    k.remove("PrivateKey");
+                }
+                json["Nets"] = kps;
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
@@ -605,6 +620,33 @@ impl RicCall {
                 println!("CreateTags");
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::ReadQuotas => {
+                json["QuotaTypes"] = json::array![
+                    json::object!{
+                        Quotas: json::array![
+                            json::object!{
+                                ShortDescription: "VM Limit",
+                                QuotaCollection: "Compute",
+                                AccountId: user_id,
+                                Description: "Maximum number of VM this user can own",
+                                MaxValue: "not implemented",
+                                UsedValue: "not implemented",
+                                Name: "bypass_group_size_limit"
+                            },
+                            json::object!{
+                                ShortDescription: "Bypass Group Size Limit",
+                                QuotaCollection: "Other",
+                                AccountId: user_id,
+                                Description: "Maximum size of a bypass group",
+                                MaxValue: "not implemented",
+                                UsedValue: "not implemented",
+                                Name: "bypass_group_size_limit"
+                            }
+                        ],
+                        QuotaType: "global"
+                    }];
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
             RicCall::CreateFlexibleGpu => {
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
                 let fgpu_json = json::object!{
@@ -678,6 +720,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadRegions),
             "/ReadPublicIpRanges" | "/api/v1/ReadPublicIpRanges" | "/api/latest/ReadPublicIpRanges" =>
                 Ok(RicCall::ReadPublicIpRanges),
+            "/ReadQuotas" | "/api/v1/ReadQuotas" | "/api/latest/ReadQuotas" =>
+                Ok(RicCall::ReadQuotas),
+            "/ReadNets" | "/api/v1/ReadNets" | "/api/latest/ReadNets" =>
+                Ok(RicCall::ReadNets),
             "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
                 Ok(RicCall::CreateNet),
             "/debug" => Ok(RicCall::Debug),
