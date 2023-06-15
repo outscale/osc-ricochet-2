@@ -1022,6 +1022,8 @@ async fn handler(req: Request<Body>,
                             path = "/ReadPublicCatalog"
                         } else if in_json["Action"] == "GetAccount" {
                             path = "/ReadAccounts"
+                        } else if in_json["Action"] == "ReadQuotas" {
+                            path = "/ReadQuotas"
                         }
                     } else if api == "directlink" {
                         let action = headers.get("x-amz-target").unwrap();
