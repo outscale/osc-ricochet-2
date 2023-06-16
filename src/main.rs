@@ -365,14 +365,9 @@ impl RicCall {
             },
             RicCall::ReadNets => {
 
-                let user_kps = &main_json[user_id]["Nets"];
+                let user_nets = &main_json[user_id]["Nets"];
 
-                let mut kps = (*user_kps).clone();
-
-                for k in kps.members_mut() {
-                    k.remove("PrivateKey");
-                }
-                json["Nets"] = kps;
+                json["Nets"] = (*user_nets).clone();
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
@@ -469,11 +464,7 @@ impl RicCall {
                         Ok(in_json) => {
                             if in_json.has_key("Filters") {
                                 let filters = in_json["Filters"].clone();
-                                if !filters.is_array() {
-                                    return bad_argument(req_id, json, "Filter must be an array :p")
-                                }
                             }
-                            todo!()
                         }
                     }
                 }
