@@ -463,7 +463,7 @@ impl RicCall {
                         },
                         Ok(in_json) => {
                             if in_json.has_key("Filters") {
-                                let filters = in_json["Filters"].clone();
+                                let _filters = in_json["Filters"].clone();
                             }
                         }
                     }
