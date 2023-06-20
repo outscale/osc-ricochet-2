@@ -795,6 +795,8 @@ async fn handler(req: Request<Body>,
         let mut error_msg = "\"Unknow user\"".to_string();
         let cred = clasify_v4(&userpass);
 
+        //println!("headers: ===|{:?}|===", headers);
+        //println!("userpass: ===|{}|===", userpass);
         if userpass.starts_with("Basic ") {
             let based = userpass.strip_prefix("Basic ").unwrap();
             let decoded = general_purpose::STANDARD
@@ -993,7 +995,11 @@ async fn handler(req: Request<Body>,
                     let args_str = std::str::from_utf8(&bytes).unwrap();
                     let mut path = uri.path().clone();
 
-                    if path.contains("icu") {
+                    let in_json = json::parse(args_str);
+                    if in_json.is_ok() && in_json.unwrap().has_key("Action") {
+                        api = "icu".to_string()
+                    }
+                    else if path.contains("icu") {
                         api = "icu".to_string()
                     }
                     if path.contains("directlinks") {
@@ -1011,6 +1017,8 @@ async fn handler(req: Request<Body>,
                             path = "/ReadConsumptionAccount"
                         } else if in_json["Action"] == "ReadPublicCatalog" {
                             path = "/ReadPublicCatalog"
+                        } else if in_json["Action"] == "ListAccessKeys" {
+                            path = "/ReadAccessKeys"
                         } else if in_json["Action"] == "GetAccount" {
                             path = "/ReadAccounts"
                         } else if in_json["Action"] == "ReadQuotas" {
