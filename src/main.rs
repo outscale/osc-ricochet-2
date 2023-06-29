@@ -58,6 +58,12 @@ fn bad_argument(req_id: usize ,mut json: json::JsonValue,
         (jsonobj_to_strret(json, req_id), StatusCode::from_u16(400).unwrap())
 }
 
+fn eval_bad_auth(req_id: usize ,mut json: json::JsonValue,
+                 error:  &str) -> (String, hyper::StatusCode) {
+    json["Errors"] = json::array![json::object!{Details: error}];
+    (jsonobj_to_strret(json, req_id), StatusCode::UNAUTHORIZED)
+}
+
 fn bad_auth(error: String) -> Result<Response<Body>,Infallible> {
     let mut response = Response::new(Body::empty());
 
@@ -93,6 +99,13 @@ fn try_conver_response(res: (String, StatusCode), need_convert: bool) -> (String
     let xml = xml_builder.build_from_json_string(res.0.as_str());
 
     return (xml.unwrap(), StatusCode::OK)
+}
+
+#[derive(PartialEq)]
+enum AuthType {
+    None,
+    Basic,
+    AkSk
 }
 
 #[derive(Debug)]
@@ -146,14 +159,14 @@ impl RicCall {
             user_id: usize,
             req_id: usize,
             headers: hyper::HeaderMap<hyper::header::HeaderValue>,
-            unauth : bool)
+            auth : AuthType)
             -> (String, hyper::StatusCode) {
         let mut json = json::JsonValue::new_object();
         let users = &cfg["users"];
         //let mut ret = ("could not happen", StatusCode::NOT_IMPLEMENTED);
 
         println!("RicCall eval: {:?}", *self);
-        if unauth && !self.is_free() {
+        if auth == AuthType::None && !self.is_free() {
             eprintln!("{:?} require auth", *self);
             return bad_argument(req_id, json, format!("{:?} require auth", *self).as_str())
         }
@@ -170,6 +183,9 @@ impl RicCall {
             },
             RicCall::ReadVms  => {
 
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadVms require v4 signature")
+                }
                 let user_vms = &main_json[user_id]["Vms"];
 
                 json["Vms"] = (*user_vms).clone();
@@ -206,7 +222,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::DeleteVms  => {
-
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteVms require v4 signature")
+                }
                 let user_vms = &mut main_json[user_id]["Vms"];
 
                 json["Vms"] = (*user_vms).clone();
@@ -248,7 +266,6 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::DeleteKeypair  => {
-
                 let user_kps = &mut main_json[user_id]["Keypairs"];
 
                 if !bytes.is_empty() {
@@ -282,6 +299,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateImage => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
+                }
                 let image_id = format!("ami-{:08}", req_id);
                 let mut image = json::object!{
                     AccountId: user_id,
@@ -310,6 +330,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateNet => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
+                }
                 let net_id = format!("vpc-{:08}", req_id);
                 let mut net = json::object!{
                     NetId: net_id
@@ -351,6 +374,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadKeypairs => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadKeypairs require v4 signature")
+                }
 
                 let user_kps = &main_json[user_id]["Keypairs"];
 
@@ -364,6 +390,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadNets => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadNets require v4 signature")
+                }
 
                 let user_nets = &main_json[user_id]["Nets"];
 
@@ -372,7 +401,6 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadAccessKeys => {
-
                 json["AccessKeys"] = json::array![
                     json::object!{
                         State:"ACTIVE",
@@ -453,6 +481,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadImages  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadImages require v4 signature")
+                }
 
                 let user_imgs = &main_json[user_id]["Images"];
                 if !bytes.is_empty() {
@@ -476,6 +507,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadDirectLinks  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadDirectLinks require v4 signature")
+                }
 
                 let user_dl = &main_json[user_id]["DirectLinks"];
 
@@ -484,6 +518,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadVolumes  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
+                }
 
                 let user_imgs = &main_json[user_id]["Volumes"];
 
@@ -492,6 +529,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadLoadBalancers  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadLoadBalancers require v4 signature")
+                }
 
                 let user_vms = &main_json[user_id]["LoadBalancers"];
 
@@ -512,6 +552,9 @@ impl RicCall {
                 }, req_id), StatusCode::OK)
             },
             RicCall::ReadFlexibleGpus  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadFlexibleGpus require v4 signature")
+                }
 
                 let user_fgpus = &main_json[user_id]["FlexibleGpus"];
 
@@ -546,6 +589,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateKeypair => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateKeypair require v4 signature")
+                }
                 let mut kp = json::object!{};
                 match json::parse(std::str::from_utf8(&bytes).unwrap()) {
                     Ok(in_json) => {
@@ -583,6 +629,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateVms => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateVms require v4 signature")
+                }
                 let vm_id = format!("i-{:08}", req_id);
                 let vm = json::object!{
                     VmType: "small",
@@ -595,6 +644,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateTags => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateTags require v4 signature")
+                }
                 if bytes.is_empty() {
                     return bad_argument(req_id, json, "Create Tags require: 'ResourceIds', 'Tags' argument");
                 }
@@ -615,6 +667,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadQuotas => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadQuotas require v4 signature")
+                }
                 json["QuotaTypes"] = json::array![
                     json::object!{
                         Quotas: json::array![
@@ -642,6 +697,9 @@ impl RicCall {
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateFlexibleGpu => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
+                }
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
                 let fgpu_json = json::object!{
                     DeleteOnVmDeletion: false,
@@ -769,12 +827,12 @@ async fn handler(req: Request<Body>,
     let method = req.method().clone();
     let headers = req.headers().clone();
     let mut user_id = 0;
-    let mut unauth = false;
     let uri = req.uri().clone();
     let mut bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
     let users = &cfg["users"];
     let mut out_convertion = false;
     let mut api = "api".to_string();
+    let mut auth = AuthType::None;
 
     println!("in handler");
 
@@ -791,7 +849,6 @@ async fn handler(req: Request<Body>,
                 auth.to_str().unwrap().to_string()
             }
             _ =>  {
-                unauth = true;
                 "".to_string()
             }
         };
@@ -814,12 +871,11 @@ async fn handler(req: Request<Body>,
                 }
                 return u["pass"] == tupeled.1;
             }) {
-                Some(idx) => user_id = idx,
-                _ => {
-                    *response.status_mut() = StatusCode::UNAUTHORIZED;
-                    *response.body_mut() = Body::from(error_msg);
-                    return Ok(response)
-                }
+                Some(idx) => {
+                    user_id = idx;
+                    auth = AuthType::Basic
+                },
+                _ => {}
             }
         } else if cred != None {
             let cred = cred.unwrap();
@@ -976,7 +1032,10 @@ async fn handler(req: Request<Body>,
                 return format!("{:x}", signature.clone().into_bytes()) == send_signature;
 
             }) {
-                Some(idx) => user_id = idx,
+                Some(idx) => {
+                    user_id = idx;
+                    auth = AuthType::AkSk
+                },
                 _ => {
                     *response.status_mut() = StatusCode::UNAUTHORIZED;
                     *response.body_mut() = Body::from(error_msg);
@@ -984,7 +1043,7 @@ async fn handler(req: Request<Body>,
                 }
             }
 
-        } else if !unauth {
+        } else if auth != AuthType::None {
             return bad_auth("\"Authorization Header wrong Format\"".to_string());
         }
     }
@@ -1033,7 +1092,7 @@ async fn handler(req: Request<Body>,
                         if action == "OvertureService.DescribeConnections" {
                             path = "/ReadDirectLinks"
                         }
-                    } else if api != "api" || unauth == true {
+                    } else if api != "api" || auth == AuthType::None {
                         let split = args_str.split('&');
                         for s in split {
                             let mut split = s.split('=');
@@ -1052,6 +1111,10 @@ async fn handler(req: Request<Body>,
                                     out_convertion = true;
                                     api = "fcu".to_string();
                                     path = "/ReadPublicIpRanges"
+                                } else if action == "DescribeRegions" {
+                                    out_convertion = true;
+                                    api = "fcu".to_string();
+                                    path = "/ReadRegions"
                                 }
                             } else if key == "KeyName" {
                                 in_args["KeypairName"] = val.unwrap().into()
@@ -1074,7 +1137,7 @@ async fn handler(req: Request<Body>,
         Ok(which_call) => {
             let res = try_conver_response(which_call.eval(
                 main_json, cfg, bytes, user_id, req_id, headers,
-                unauth
+                auth
             ), out_convertion);
             let mut response = Response::new(Body::empty());
             if api == "directlink" {
