@@ -464,6 +464,9 @@ impl RicCall {
                         Ok(in_json) => {
                             if in_json.has_key("Filters") {
                                 let _filters = in_json["Filters"].clone();
+                                if !_filters.is_object() {
+                                    return bad_argument(req_id, json, "Filter must be an object :p")
+                                }
                             }
                         }
                     }
