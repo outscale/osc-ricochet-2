@@ -139,6 +139,7 @@ enum RicCall {
     // Free Calls
     ReadPublicCatalog,
     ReadRegions,
+    ReadSubregions,
     ReadPublicIpRanges
 }
 
@@ -452,6 +453,23 @@ impl RicCall {
                     }
                 ];
 
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
+            RicCall::ReadSubregions  => {
+                json["Subregions"] = json::array![
+                    json::object!{
+                        State: "available",
+                        RegionName: "mud-half-3",
+                        SubregionName: "mud-half-3a",
+                        LocationCode: "PAR1"
+                    },
+                    json::object!{
+                        State: "available",
+                        RegionName: "mud-half-3",
+                        SubregionName: "mud-half-3b",
+                        LocationCode: "PAR1"
+                    }
+                ];
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadAccounts  => {
@@ -770,6 +788,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadPublicCatalog),
             "/ReadRegions" | "/api/v1/ReadRegions" | "/api/latest/ReadRegions" =>
                 Ok(RicCall::ReadRegions),
+            "/ReadSubregions" | "/api/v1/ReadSubregions" | "/api/latest/ReadSubregions" =>
+                Ok(RicCall::ReadSubregions),
             "/ReadPublicIpRanges" | "/api/v1/ReadPublicIpRanges" | "/api/latest/ReadPublicIpRanges" =>
                 Ok(RicCall::ReadPublicIpRanges),
             "/ReadQuotas" | "/api/v1/ReadQuotas" | "/api/latest/ReadQuotas" =>
@@ -1144,6 +1164,7 @@ async fn handler(req: Request<Body>,
                 response.headers_mut().append("x-amz-requestid", req_id.to_string().parse().unwrap());
             }
             *response.status_mut() = res.1;
+            response.headers_mut().append("Content-Type", "application/json".parse().unwrap());
             *response.body_mut() = Body::from(res.0);
             return Ok(response)
         },
