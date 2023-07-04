@@ -27,7 +27,7 @@ type HmacSha256 = Hmac<Sha256>;
 
 fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json["ResponseContext"] = json::JsonValue::new_object();
-    json["ResponseContext"]["RequestId"] = req_id.into();
+    json["ResponseContext"]["RequestId"] = json::JsonValue::String(req_id.to_string());
     json::stringify_pretty(json, 3)
 }
 
