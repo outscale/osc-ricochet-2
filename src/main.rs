@@ -135,6 +135,7 @@ enum RicCall {
     ReadVms,
     ReadVolumes,
     ReadQuotas,
+    ReadSecurityGroups,
 
     // Free Calls
     ReadPublicCatalog,
@@ -524,6 +525,17 @@ impl RicCall {
 
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::ReadSecurityGroups  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadSecurityGroups require v4 signature")
+                }
+
+                let user_dl = &main_json[user_id]["SecurityGroups"];
+
+                json["SecurityGroups"] = (*user_dl).clone();
+
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
             RicCall::ReadDirectLinks  => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "ReadDirectLinks require v4 signature")
@@ -780,6 +792,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadImages),
             "/ReadDirectLinks" | "/api/v1/ReadDirectLinks" | "/api/latest/ReadDirectLinks" =>
                 Ok(RicCall::ReadDirectLinks),
+            "/ReadSecurityGroups" | "/api/v1/ReadSecurityGroups" | "/api/latest/ReadSecurityGroups" =>
+                Ok(RicCall::ReadSecurityGroups),
             "/ReadVolumes" | "/api/v1/ReadVolumes" | "/api/latest/ReadVolumes" =>
                 Ok(RicCall::ReadVolumes),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
@@ -1208,6 +1222,7 @@ async fn main() {
             Vms: json::JsonValue::new_array(),
             FlexibleGpus: json::JsonValue::new_array(),
             LoadBalancers: json::JsonValue::new_array(),
+            SecurityGroups: json::JsonValue::new_array(),
             Images: json::JsonValue::new_array(),
             DirectLinks: json::JsonValue::new_array(),
             Nets: json::JsonValue::new_array(),
