@@ -1,0 +1,18 @@
+{
+    "auth_type": "headarches",
+    "password_as_ak": true,
+    "users": [
+	{
+	    "access_key": "11112211111110000000",
+	    "secret_key": "0000001111112222223333334444445555555666",
+	    "login": "joe",
+	    "pass": "ashita wa dochida"
+	},
+	{
+	    "access_key": "11112211111110000333",
+	    "secret_key": "1000001111112222223333334444445555555666",
+	    "login": "titi",
+	    "pass": "toto"
+	}
+    ]
+}

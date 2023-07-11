@@ -889,11 +889,14 @@ async fn handler(req: Request<Body>,
                 if auth_type < 1 {
                     return ret;
                 }
-                return u["pass"] == tupeled.1;
+                return u["pass"] == tupeled.1
             }) {
                 Some(idx) => {
                     user_id = idx;
-                    auth = AuthType::Basic
+                    auth = match cfg["password_as_ak"] == true {
+                        true => AuthType::AkSk,
+                        _ => AuthType::Basic,
+                    };
                 },
                 _ => {}
             }
