@@ -4,6 +4,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::string::String;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use core::fmt::Write;
+
 use futures::lock::Mutex;
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
@@ -20,8 +23,10 @@ use pem::{Pem, encode_config, EncodeConfig, LineEnding};
 use ipnet::Ipv4Net;
 use xml2json_rs::XmlBuilder;
 
-//use openssl::x509::X509;
-//use openssl::hash::MessageDigest;
+use openssl::x509::X509Builder;
+use openssl::pkey::PKey;
+use openssl::hash::MessageDigest;
+use std::ops::Deref;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -48,6 +53,14 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
     } else {
         true
     }
+}
+
+fn serv_error(req_id: usize , mut json: json::JsonValue,
+                error:  &str) ->
+    (String, hyper::StatusCode) {
+        eprintln!("serv_Error: {}", error);
+        json["Errors"] = json::array![json::object!{Details: error}];
+        (jsonobj_to_strret(json, req_id), StatusCode::from_u16(503).unwrap())
 }
 
 fn bad_argument(req_id: usize ,mut json: json::JsonValue,
@@ -633,18 +646,42 @@ impl RicCall {
                                 }
                             }
                             kp["KeypairName"] = json::JsonValue::String(name);
-                            let rsa = Rsa::generate(2048).unwrap();
 
-                            // let public_key = rsa.public_key_to_der().unwrap();
-                            let private_key = rsa.private_key_to_der().unwrap();
-                            //let public_keyu8: &[u8] = &private_key; // c: &[u8]
-                            // let x509 = X509::from_der(&public_key).unwrap();
+                            let rsa = Rsa::generate(4096).unwrap();
+                            let private_key = rsa.clone().private_key_to_der().unwrap();
+                            let pkey = PKey::from_rsa(rsa).unwrap();
+                            let pkey_ref = pkey.deref();
+                            let mut x509builder = X509Builder::new().unwrap();
+                            match x509builder.set_pubkey(pkey_ref) {
+                                Ok(()) => (),
+                                _ => {
+                                    return serv_error(req_id, json, "fail to generate fingerprint (0)")
+                                }
+                            }
+                            match x509builder.sign(pkey_ref, MessageDigest::md5()) {
+                                Ok(()) => (),
+                                _ => {
+                                    return serv_error(req_id, json, "fail to generate fingerprint (1)")
+                                }
+                            }
+                            let x509 = x509builder.build();
 
-                            let private_pem = Pem::new("RSA PRIVATE KEY", private_key);
+                            let digest = x509.digest(MessageDigest::md5()).unwrap();
+                            let mut digest_str = String::with_capacity(3 * digest.len());
+                            let mut first_byte = true;
+                            for byte in digest.to_vec() {
+                                if !first_byte {
+                                    write!(digest_str, ":").unwrap();
+                                }
+                                write!(digest_str, "{:02x}", byte).unwrap();
+                                first_byte = false;
+                            }
+                            json["KeypairFingerprint"] = json::JsonValue::String(digest_str);
+
+                            let private_pem = Pem::new("PRIVATE KEY", private_key);
                             let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
 
                             kp["PrivateKey"] = json::JsonValue::String(private);
-                            //json["KeypairFingerprint"] = json::JsonValue::String(x509.digest(MessageDigest::md5()).unwrap().escape_ascii().to_string());
                         } else {
                             return bad_argument(req_id, json, "KeypairName Missing")
                         }
