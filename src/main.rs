@@ -133,6 +133,7 @@ enum RicCall {
     CreateTags,
     CreateFlexibleGpu,
     CreateImage,
+    CreateLoadBalancer,
 
     DeleteKeypair,
 
@@ -176,6 +177,18 @@ impl RicCall {
             headers: hyper::HeaderMap<hyper::header::HeaderValue>,
             auth : AuthType)
             -> (String, hyper::StatusCode) {
+
+        macro_rules! check_conflict {
+            ($resource:expr, $to_check:expr, $mjson:expr, $req_id:expr, $json:expr) => {{
+                for k in $mjson[user_id][concat!(stringify!($resource), "s")].members() {
+                    if k[concat!(stringify!($resource), "Name")].to_string() == $to_check {
+                        return bad_argument($req_id, $json, concat!(stringify!($resource),
+                                                                  " Name conflict"));
+                    }
+                }
+            }};
+        }
+
         let mut json = json::JsonValue::new_object();
         let users = &cfg["users"];
         //let mut ret = ("could not happen", StatusCode::NOT_IMPLEMENTED);
@@ -311,6 +324,30 @@ impl RicCall {
                         }
                     }
                 }
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
+            RicCall::CreateLoadBalancer => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateLoadBalancer require v4 signature")
+                }
+                let mut lb = json::object!{
+                };
+                match json::parse(std::str::from_utf8(&bytes).unwrap()) {
+                    Ok(in_json) => {
+                        if in_json.has_key("LoadBalancerName") {
+                            let name = in_json["LoadBalance"].to_string();
+                            check_conflict!(LoadBalancer, name, main_json, req_id, json);
+                            lb["LoadBalancerName"] = json::JsonValue::String(name);
+                        }
+                    },
+                    Err(_) => {
+                        return bad_argument(req_id, json, "Invalid JSON format")
+                    }
+                }
+
+                main_json[user_id]["LoadBalancers"].push(
+                    lb.clone()).unwrap();
+                json["LoadBalancers"] = json::array!{lb};
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateImage => {
@@ -640,11 +677,7 @@ impl RicCall {
                     Ok(in_json) => {
                         if in_json.has_key("KeypairName") {
                             let name = in_json["KeypairName"].to_string();
-                            for k in main_json[user_id]["Keypairs"].members() {
-                                if k["KeypairName"].to_string() == name {
-                                    return bad_argument(req_id, json, "KeypairName Name conflict")
-                                }
-                            }
+                            check_conflict!(Keypair, name, main_json, req_id, json);
                             kp["KeypairName"] = json::JsonValue::String(name);
 
                             let rsa = Rsa::generate(4096).unwrap();
@@ -823,6 +856,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateFlexibleGpu),
             "/CreateImage" | "/api/v1/CreateImage" | "/api/latest/CreateImage" =>
                 Ok(RicCall::CreateImage),
+            "/CreateLoadBalancer" | "/api/v1/CreateLoadBalancer" | "/api/latest/CreateLoadBalancer" =>
+                Ok(RicCall::CreateLoadBalancer),
             "/ReadAccounts" | "/api/v1/ReadAccounts" | "/api/latest/ReadAccounts" =>
                 Ok(RicCall::ReadAccounts),
             "/ReadImages" | "/api/v1/ReadImages" | "/api/latest/ReadImages" =>
