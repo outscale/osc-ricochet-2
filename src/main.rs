@@ -179,10 +179,13 @@ impl RicCall {
             -> (String, hyper::StatusCode) {
 
         macro_rules! check_conflict {
-            ($resource:expr, $to_check:expr, $mjson:expr, $req_id:expr, $json:expr) => {{
-                for k in $mjson[user_id][concat!(stringify!($resource), "s")].members() {
+            ($resource:expr, $to_check:expr, $json:expr) => {{
+                for k in main_json[user_id][concat!(stringify!($resource), "s")].members() {
+                    println!("cmp ({}): {} with {}", concat!(stringify!($resource), "Name"),
+                             k[concat!(stringify!($resource), "Name")].to_string(),
+                             $to_check);
                     if k[concat!(stringify!($resource), "Name")].to_string() == $to_check {
-                        return bad_argument($req_id, $json, concat!(stringify!($resource),
+                        return bad_argument(req_id, $json, concat!(stringify!($resource),
                                                                   " Name conflict"));
                     }
                 }
@@ -335,13 +338,22 @@ impl RicCall {
                 match json::parse(std::str::from_utf8(&bytes).unwrap()) {
                     Ok(in_json) => {
                         if in_json.has_key("LoadBalancerName") {
-                            let name = in_json["LoadBalance"].to_string();
-                            check_conflict!(LoadBalancer, name, main_json, req_id, json);
+                            let name = in_json["LoadBalancerName"].to_string();
+                            check_conflict!(LoadBalancer, name, json);
                             lb["LoadBalancerName"] = json::JsonValue::String(name);
+                        } else {
+                            return bad_argument(req_id, json, "LoadBalancerName missing")
+                        }
+                        if in_json.has_key("Listeners") {
+                            let listeners = in_json["Listeners"].clone();
+
+                            lb["Listeners"] = listeners;
+                        } else {
+                            return bad_argument(req_id, json, "Listeners missing")
                         }
                     },
                     Err(_) => {
-                        return bad_argument(req_id, json, "Invalid JSON format")
+                        return bad_argument(req_id, json, "Invalid JSON format, or no input")
                     }
                 }
 
@@ -677,7 +689,7 @@ impl RicCall {
                     Ok(in_json) => {
                         if in_json.has_key("KeypairName") {
                             let name = in_json["KeypairName"].to_string();
-                            check_conflict!(Keypair, name, main_json, req_id, json);
+                            check_conflict!(Keypair, name, json);
                             kp["KeypairName"] = json::JsonValue::String(name);
 
                             let rsa = Rsa::generate(4096).unwrap();
