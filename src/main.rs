@@ -676,7 +676,7 @@ impl RicCall {
                                 write!(digest_str, "{:02x}", byte).unwrap();
                                 first_byte = false;
                             }
-                            json["KeypairFingerprint"] = json::JsonValue::String(digest_str);
+                            kp["KeypairFingerprint"] = json::JsonValue::String(digest_str);
 
                             let private_pem = Pem::new("PRIVATE KEY", private_key);
                             let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
