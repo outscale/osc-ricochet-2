@@ -377,7 +377,16 @@ impl RicCall {
                         }
 
                         if in_json.has_key("Listeners") {
-                            let listeners = in_json["Listeners"].clone();
+                            let mut listeners = in_json["Listeners"].clone();
+                            for l in listeners.members_mut() {
+                                if !l.has_key("LoadBalancerProtocol") {
+                                    return bad_argument(req_id, json, "Listener require LoadBalancerProtocol");
+                                }
+
+                                if !l.has_key("BackendProtocol") {
+                                    l["BackendProtocol"] = l["LoadBalancerProtocol"].clone();
+                                }
+                            }
 
                             lb["Listeners"] = listeners;
                         } else {
