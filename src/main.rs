@@ -334,9 +334,40 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "CreateLoadBalancer require v4 signature")
                 }
                 let mut lb = json::object!{
+                    BackendVmIds: json::array![],
+                    ApplicationStickyCookiePolicies: json::array![],
+                    LoadBalancerType:"internet-facing",
+                    DnsName: "unimplemented",
+                    HealthCheck: json::object!{
+                        UnhealthyThreshold:2,
+                        Timeout:5,
+                        CheckInterval:30,
+                        Protocol:"TCP",
+                        HealthyThreshold:10,
+                        Port:80
+                    },
+                    LoadBalancerStickyCookiePolicies: json::array![]
                 };
                 match json::parse(std::str::from_utf8(&bytes).unwrap()) {
                     Ok(in_json) => {
+                        if in_json.has_key("SubregionNames") {
+                            lb["SubregionNames"] = in_json["SubregionNames"].clone();
+                        } else {
+                            lb["SubregionNames"] = json::array!["mud-half-3a"];
+                        }
+
+                        if in_json.has_key("Tags") {
+                            lb["Tags"] = in_json["Tags"].clone();
+                        } else {
+                            lb["Tags"] = json::array![];
+                        }
+
+                        if in_json.has_key("Subnets") {
+                            lb["Subnets"] = in_json["Subnets"].clone();
+                        } else {
+                            lb["Subnets"] = json::array![];
+                        }
+
                         if in_json.has_key("LoadBalancerName") {
                             let name = in_json["LoadBalancerName"].to_string();
                             check_conflict!(LoadBalancer, name, json);
@@ -344,6 +375,7 @@ impl RicCall {
                         } else {
                             return bad_argument(req_id, json, "LoadBalancerName missing")
                         }
+
                         if in_json.has_key("Listeners") {
                             let listeners = in_json["Listeners"].clone();
 
@@ -356,10 +388,15 @@ impl RicCall {
                         return bad_argument(req_id, json, "Invalid JSON format, or no input")
                     }
                 }
+                lb["SourceSecurityGroup"] = json::object!{
+                    SecurityGroupAccountId: "unknow",
+                    SecurityGroupName: "unknow"
+                };
+                lb["SecuredCookies"] = json::JsonValue::Boolean(false);
 
                 main_json[user_id]["LoadBalancers"].push(
                     lb.clone()).unwrap();
-                json["LoadBalancers"] = json::array!{lb};
+                json["LoadBalancer"] = json::array!{lb};
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateImage => {
