@@ -334,8 +334,8 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "CreateLoadBalancer require v4 signature")
                 }
                 let mut lb = json::object!{
-                    BackendVmIds: json::array![],
                     ApplicationStickyCookiePolicies: json::array![],
+                    BackendVmIds: json::array![],
                     LoadBalancerType:"internet-facing",
                     DnsName: "unimplemented",
                     HealthCheck: json::object!{
@@ -345,6 +345,10 @@ impl RicCall {
                         Protocol:"TCP",
                         HealthyThreshold:10,
                         Port:80
+                    },
+                    AccessLog: json::object!{
+                        PublicationInterval:60,
+                        IsEnabled:false
                     },
                     LoadBalancerStickyCookiePolicies: json::array![]
                 };
@@ -405,7 +409,7 @@ impl RicCall {
 
                 main_json[user_id]["LoadBalancers"].push(
                     lb.clone()).unwrap();
-                json["LoadBalancer"] = json::array!{lb};
+                json["LoadBalancer"] = lb;
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::CreateImage => {
