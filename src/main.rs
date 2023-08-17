@@ -129,13 +129,14 @@ enum RicCall {
     CreateNet,
     CreateKeypair,
     CreateVms,
-    DeleteVms,
     CreateTags,
     CreateFlexibleGpu,
     CreateImage,
     CreateLoadBalancer,
 
     DeleteKeypair,
+    DeleteLoadBalancer,
+    DeleteVms,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -293,6 +294,39 @@ impl RicCall {
                             return bad_argument(req_id, json, "Invalide json");
                         }
                     }
+                }
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
+            RicCall::DeleteLoadBalancer  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteLoadBalancer require v4 signature")
+                }
+                let user_lbu = &mut main_json[user_id]["LoadBalancers"];
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("LoadBalancerName") {
+                                let id = &in_json["LoadBalancerName"];
+
+                                let idx = match user_lbu.members().
+                                    position(|lbu| {
+                                        *id == lbu["LoadBalancerName"]
+                                    }
+                                    ) {
+                                        Some(idx) => idx,
+                                        None => return bad_argument(req_id, json, "name not found")
+                                    };
+                                user_lbu.array_remove(idx);
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                } else {
+                    return bad_argument(req_id, json, "Invalide json");
                 }
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
@@ -908,6 +942,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateVms),
             "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
                 Ok(RicCall::DeleteVms),
+            "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
+                Ok(RicCall::DeleteLoadBalancer),
             "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" =>
                 Ok(RicCall::ReadFlexibleGpus),
             "/ReadConsumptionAccount" |"/api/v1/ReadConsumptionAccount" | "/api/latest/ReadConsumptionAccount" =>
