@@ -133,6 +133,7 @@ enum RicCall {
     CreateFlexibleGpu,
     CreateImage,
     CreateLoadBalancer,
+    CreateSecurityGroup,
 
     DeleteKeypair,
     DeleteLoadBalancer,
@@ -452,7 +453,7 @@ impl RicCall {
                 }
                 let image_id = format!("ami-{:08}", req_id);
                 let mut image = json::object!{
-                    AccountId: user_id,
+                    AccountId: format!("{:08}", user_id),
                     ImageId: image_id
                 };
                 if !users[user_id]["login"].is_null() {
@@ -721,7 +722,7 @@ impl RicCall {
                     ConsumptionEntries:
                     json::array!{
                         json::object!{
-                            AccountId: user_id,
+                            AccountId: format!("{:08}", user_id),
                             Value: 0
                         }
                     }
@@ -824,6 +825,55 @@ impl RicCall {
                 json["Keypair"] = kp;
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::CreateSecurityGroup => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
+                }
+                let sg_id = format!("sg-{:08}", req_id);
+                let mut sg = json::object!{
+                    Tags: json::array!{},
+                    SecurityGroupId: sg_id,
+                    AccountId: format!("{:08}", user_id),
+                    OutboundRules: json::array!{},
+                    InboundRules: json::array!{},
+                };
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            if in_json.has_key("SecurityGroupName") {
+                                sg["SecurityGroupName"] = in_json["SecurityGroupName"].clone();
+                            } else {
+                                return bad_argument(req_id, json, "SecurityGroupName missing");
+                            }
+
+                            if in_json.has_key("NetId") {
+                                let net_id = in_json["NetId"].clone();
+                                let user_nets = &mut main_json[user_id]["Nets"];
+                                match user_nets.members().position(|net| net_id == net["NetId"]) {
+                                    Some(_idx) => { sg["NetId"] = net_id },
+                                    _ => return bad_argument(req_id, json, "NetId doesn't corespond to a net id")
+                                }
+                            }
+
+                            if in_json.has_key("Description") {
+                                sg["Description"] = in_json["Description"].clone();
+                            } else {
+                                return bad_argument(req_id, json, "Description is needed")
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                } else {
+                    return bad_argument(req_id, json, "CreateSecurityGroup arguments needed");
+                }
+                main_json[user_id]["SecurityGroups"].push(
+                    sg.clone()).unwrap();
+                json["SecurityGroup"] = sg;
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
             RicCall::CreateVms => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateVms require v4 signature")
@@ -872,7 +922,7 @@ impl RicCall {
                             json::object!{
                                 ShortDescription: "VM Limit",
                                 QuotaCollection: "Compute",
-                                AccountId: user_id,
+                                AccountId: format!("{:08}", user_id),
                                 Description: "Maximum number of VM this user can own",
                                 MaxValue: "not implemented",
                                 UsedValue: "not implemented",
@@ -881,7 +931,7 @@ impl RicCall {
                             json::object!{
                                 ShortDescription: "Bypass Group Size Limit",
                                 QuotaCollection: "Other",
-                                AccountId: user_id,
+                                AccountId: format!("{:08}", user_id),
                                 Description: "Maximum size of a bypass group",
                                 MaxValue: "not implemented",
                                 UsedValue: "not implemented",
@@ -940,6 +990,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadVms),
             "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" =>
                 Ok(RicCall::CreateVms),
+            "/CreateSecurityGroup" | "/api/v1/CreateSecurityGroup" | "/api/latest/CreateSecurityGroup" =>
+                Ok(RicCall::CreateSecurityGroup),
             "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
                 Ok(RicCall::DeleteVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
