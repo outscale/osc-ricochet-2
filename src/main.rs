@@ -134,6 +134,7 @@ enum RicCall {
     CreateImage,
     CreateLoadBalancer,
     CreateSecurityGroup,
+    CreateSecurityGroupRule,
 
     DeleteKeypair,
     DeleteLoadBalancer,
@@ -825,6 +826,57 @@ impl RicCall {
                 json["Keypair"] = kp;
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::CreateSecurityGroupRule => {
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            let sg_id = match in_json.has_key("SecurityGroupId") {
+                                true => in_json["SecurityGroupId"].clone(),
+                                _ => return bad_argument(req_id, json, "SecurityGroupId required")
+                            };
+                            let user_sgs = &mut main_json[user_id]["SecurityGroups"];
+                            let sg = match user_sgs.members_mut().find(|sg| sg_id == sg["SecurityGroupId"]) {
+                                Some(sg) => sg,
+                                _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
+                            };
+                            let flow = match in_json.has_key("Flow") {
+                                true => match in_json["Flow"].as_str() {
+                                    Some(s) => match s {
+                                        "Inbound" => true,
+                                        "Outbound" => false,
+                                        _ => return bad_argument(req_id, json, "The direction of the flow must be `Inbound` or `Outbound`.")
+                                    },
+                                    _ => return bad_argument(req_id, json, "Flow should be a string")
+                                },
+                                _ => return bad_argument(req_id, json, "Flow required")
+                            };
+                            let new_rule = json::object!{
+                                "FromPortRange":1111,
+                                "IpProtocol":"unimplemented",
+                                "ToPortRange":2222,
+                                "IpRanges":[
+                                    "unimplemented"
+                                ]
+                            };
+
+                            if flow == true {
+                                sg["InboundRules"].push(new_rule).unwrap();
+                            } else {
+                                sg["OutboundRules"].push(new_rule).unwrap();
+                            }
+
+                            json["SecurityGroup"] = sg.clone();
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                } else {
+                    return bad_argument(req_id, json, "CreateSecurityGroupRule arguments needed");
+                }
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            }
             RicCall::CreateSecurityGroup => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
@@ -992,6 +1044,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateVms),
             "/CreateSecurityGroup" | "/api/v1/CreateSecurityGroup" | "/api/latest/CreateSecurityGroup" =>
                 Ok(RicCall::CreateSecurityGroup),
+            "/CreateSecurityGroupRule" | "/api/v1/CreateSecurityGroupRule" | "/api/latest/CreateSecurityGroupRule" =>
+                Ok(RicCall::CreateSecurityGroupRule),
             "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
                 Ok(RicCall::DeleteVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
