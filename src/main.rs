@@ -181,6 +181,13 @@ impl RicCall {
             auth : AuthType)
             -> (String, hyper::StatusCode) {
 
+        fn is_same_rule(a: &json::JsonValue, b: &json::JsonValue) -> bool {
+            a["FromPortRange"] == b["FromPortRange"] &&
+                a["IpProtocol"] == b["IpProtocol"] &&
+                a["ToPortRange"] == b["ToPortRange"] &&
+                a["IpRanges"].members().eq(b["IpRanges"].members())
+        }
+
         macro_rules! check_conflict {
             ($resource:expr, $to_check:expr, $json:expr) => {{
                 for k in main_json[user_id][concat!(stringify!($resource), "s")].members() {
@@ -861,6 +868,9 @@ impl RicCall {
                             };
 
                             if flow == true {
+                                if sg["InboundRules"].members().find(|other_rule| is_same_rule(&new_rule, other_rule)) != None {
+                                    return bad_argument(req_id, json, "rule alerady exist");
+                                }
                                 sg["InboundRules"].push(new_rule).unwrap();
                             } else {
                                 sg["OutboundRules"].push(new_rule).unwrap();
