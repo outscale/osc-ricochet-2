@@ -189,6 +189,15 @@ impl RicCall {
                 a["IpRanges"].members().eq(b["IpRanges"].members())
         }
 
+        macro_rules! array_remove {
+            ($json:expr, $array:expr, $predicate:expr) => {{
+                match $array.members().position($predicate) {
+                    Some(idx) => $array.array_remove(idx),
+                    None => return bad_argument(req_id, $json, "Element not found(alerady destroy ?)")
+                }
+            }}
+        }
+
         macro_rules! flow_to_str {
             ($flow:expr) =>
             {{
@@ -353,15 +362,7 @@ impl RicCall {
                             if in_json.has_key("LoadBalancerName") {
                                 let id = &in_json["LoadBalancerName"];
 
-                                let idx = match user_lbu.members().
-                                    position(|lbu| {
-                                        *id == lbu["LoadBalancerName"]
-                                    }
-                                    ) {
-                                        Some(idx) => idx,
-                                        None => return bad_argument(req_id, json, "name not found")
-                                    };
-                                user_lbu.array_remove(idx);
+                                array_remove!(json, user_lbu, |lbu| *id == lbu["LoadBalancerName"]);
                             }
                         },
                         Err(_) => {
@@ -385,6 +386,7 @@ impl RicCall {
 
                                 let mut idx = 0;
                                 let mut rm = false;
+                                // can be refacto using array_remove!
                                 for vm in user_kps.members() {
                                     if *name == vm["KeypairName"] {
                                         rm = true;
@@ -889,17 +891,15 @@ impl RicCall {
                 };
 
                 let new_rule = json::object!{
-                    "FromPortRange":1111,
+                    "FromPortRange": require_arg!(in_json, "FromPortRange", json),
                     "IpProtocol":"unimplemented",
                     "ToPortRange":2222,
                     "IpRanges":[
                         "unimplemented"
                     ]
                 };
-                match sg[flow_to_str!(flow)].members().position(|other_rule| is_same_rule(&new_rule, other_rule)) {
-                    Some(idx) => sg[flow_to_str!(flow)].array_remove(idx),
-                    None => return bad_argument(req_id, json, "rule does not exist")
-                };
+                array_remove!(json, sg[flow_to_str!(flow)],
+                                 |other_rule| is_same_rule(&new_rule, other_rule));
                 json["SecurityGroup"] = sg.clone();
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
@@ -933,7 +933,7 @@ impl RicCall {
                                 _ => return bad_argument(req_id, json, "Flow required")
                             };
                             let new_rule = json::object!{
-                                "FromPortRange":1111,
+                                "FromPortRange": require_arg!(in_json, "FromPortRange", json),
                                 "IpProtocol":"unimplemented",
                                 "ToPortRange":2222,
                                 "IpRanges":[
