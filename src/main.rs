@@ -139,6 +139,7 @@ enum RicCall {
     DeleteKeypair,
     DeleteLoadBalancer,
     DeleteVms,
+    DeleteSecurityGroup,
     DeleteSecurityGroupRule,
 
     ReadAccessKeys,
@@ -206,6 +207,15 @@ impl RicCall {
                 match $flow {
                     true => "InboundRules",
                     _ => "OutboundRules"
+                }
+            }}
+        }
+
+        macro_rules! optional_arg {
+            ($in_json:expr, $arg:expr, $default:expr) => {{
+                match $in_json.has_key($arg) {
+                    true => $in_json[$arg].clone(),
+                    _ => $default.into()
                 }
             }}
         }
@@ -870,6 +880,27 @@ impl RicCall {
                 json["Keypair"] = kp;
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::DeleteSecurityGroup => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteSecurityGroupRule require v4 signature")
+                }
+
+                let in_json = require_in_json!(bytes);
+                let user_sgs = &mut main_json[user_id]["SecurityGroups"];
+
+                let id = optional_arg!(in_json, "SecurityGroupId", -1);
+                if id == -1 {
+                    let name = optional_arg!(in_json, "SecurityGroupName", -1);
+
+                    if name == -1 {
+                        return bad_argument(req_id, json, "either SecurityGroupId or SecurityGroupName is require")
+                    }
+                    array_remove!(user_sgs, |sg| sg["SecurityGroupName"] == name);
+                } else {
+                    array_remove!(user_sgs, |sg| sg["SecurityGroupId"] == id);
+                }
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
             RicCall::DeleteSecurityGroupRule => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "DeleteSecurityGroupRule require v4 signature")
@@ -893,7 +924,7 @@ impl RicCall {
 
                 let new_rule = json::object!{
                     "FromPortRange": require_arg!(in_json, "FromPortRange"),
-                    "IpProtocol":"unimplemented",
+                    "IpProtocol": optional_arg!(in_json, "IpProtocol", "-1"),
                     "ToPortRange":2222,
                     "IpRanges":[
                         "unimplemented"
@@ -935,7 +966,7 @@ impl RicCall {
                             };
                             let new_rule = json::object!{
                                 "FromPortRange": require_arg!(in_json, "FromPortRange"),
-                                "IpProtocol":"unimplemented",
+                                "IpProtocol": optional_arg!(in_json, "IpProtocol", "-1"),
                                 "ToPortRange":2222,
                                 "IpRanges":[
                                     "unimplemented"
@@ -1132,6 +1163,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
                 Ok(RicCall::DeleteLoadBalancer),
+            "/DeleteSecurityGroup" | "/api/v1/DeleteSecurityGroup" | "/api/latest/DeleteSecurityGroup" =>
+                Ok(RicCall::DeleteSecurityGroup),
             "/DeleteSecurityGroupRule" | "/api/v1/DeleteSecurityGroupRule" | "/api/latest/DeleteSecurityGroupRule" =>
                 Ok(RicCall::DeleteSecurityGroupRule),
 
