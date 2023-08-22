@@ -328,6 +328,7 @@ impl RicCall {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
                         Ok(in_json) => {
+                            // need refacto using user_vms.members().filter(FIND and do json["Vms"].push((*vm)).for_each(REMOVE)
                             if in_json.has_key("VmIds") {
                                 let ids = &in_json["VmIds"];
 
