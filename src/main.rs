@@ -575,7 +575,7 @@ impl RicCall {
                 }
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
-                json["Nets"] = json::array!{net};
+                json["Net"] = json::array!{net};
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadKeypairs => {
