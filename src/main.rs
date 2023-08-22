@@ -182,6 +182,8 @@ impl RicCall {
             auth : AuthType)
             -> (String, hyper::StatusCode) {
 
+        let mut json = json::JsonValue::new_object();
+
         fn is_same_rule(a: &json::JsonValue, b: &json::JsonValue) -> bool {
             a["FromPortRange"] == b["FromPortRange"] &&
                 a["IpProtocol"] == b["IpProtocol"] &&
@@ -190,10 +192,10 @@ impl RicCall {
         }
 
         macro_rules! array_remove {
-            ($json:expr, $array:expr, $predicate:expr) => {{
+            ($array:expr, $predicate:expr) => {{
                 match $array.members().position($predicate) {
                     Some(idx) => $array.array_remove(idx),
-                    None => return bad_argument(req_id, $json, "Element not found(alerady destroy ?)")
+                    None => return bad_argument(req_id, json, "Element not found(alerady destroy ?)")
                 }
             }}
         }
@@ -209,23 +211,23 @@ impl RicCall {
         }
 
         macro_rules! require_arg {
-            ($in_json:expr, $arg:expr, $json:expr) => {{
+            ($in_json:expr, $arg:expr) => {{
                 match $in_json.has_key($arg) {
                     true => $in_json[$arg].clone(),
-                    _ => return bad_argument(req_id, $json, format!("{} required", $arg).as_str())
+                    _ => return bad_argument(req_id, json, format!("{} required", $arg).as_str())
                 }
             }}
         }
 
         macro_rules! require_in_json {
-            ($bytes:expr, $json:expr) => {{
+            ($bytes:expr) => {{
                 if bytes.is_empty() {
-                    return bad_argument(req_id, $json, "Argument require");
+                    return bad_argument(req_id, json, "Argument require");
                 }
                 match json::parse(std::str::from_utf8(&bytes).unwrap()) {
                     Ok(in_json) => in_json,
                     Err(_) => {
-                        return bad_argument(req_id, $json, "Invalide json");
+                        return bad_argument(req_id, json, "Invalide json");
                     }
                 }
             }}
@@ -245,7 +247,6 @@ impl RicCall {
             }};
         }
 
-        let mut json = json::JsonValue::new_object();
         let users = &cfg["users"];
         //let mut ret = ("could not happen", StatusCode::NOT_IMPLEMENTED);
 
@@ -362,7 +363,7 @@ impl RicCall {
                             if in_json.has_key("LoadBalancerName") {
                                 let id = &in_json["LoadBalancerName"];
 
-                                array_remove!(json, user_lbu, |lbu| *id == lbu["LoadBalancerName"]);
+                                array_remove!(user_lbu, |lbu| *id == lbu["LoadBalancerName"]);
                             }
                         },
                         Err(_) => {
@@ -874,8 +875,8 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "DeleteSecurityGroupRule require v4 signature")
                 }
 
-                let in_json = require_in_json!(bytes, json);
-                let flow = match require_arg!(in_json, "Flow", json).as_str() {
+                let in_json = require_in_json!(bytes);
+                let flow = match require_arg!(in_json, "Flow").as_str() {
                     Some(s) => match s {
                         "Inbound" => true,
                         "Outbound" => false,
@@ -883,7 +884,7 @@ impl RicCall {
                     },
                     _ => return bad_argument(req_id, json, "Flow must be a string")
                 };
-                let sg_id = require_arg!(in_json, "SecurityGroupId", json);
+                let sg_id = require_arg!(in_json, "SecurityGroupId");
                 let user_sgs = &mut main_json[user_id]["SecurityGroups"];
                 let sg = match user_sgs.members_mut().find(|sg| sg_id == sg["SecurityGroupId"]) {
                     Some(sg) => sg,
@@ -891,14 +892,14 @@ impl RicCall {
                 };
 
                 let new_rule = json::object!{
-                    "FromPortRange": require_arg!(in_json, "FromPortRange", json),
+                    "FromPortRange": require_arg!(in_json, "FromPortRange"),
                     "IpProtocol":"unimplemented",
                     "ToPortRange":2222,
                     "IpRanges":[
                         "unimplemented"
                     ]
                 };
-                array_remove!(json, sg[flow_to_str!(flow)],
+                array_remove!(sg[flow_to_str!(flow)],
                                  |other_rule| is_same_rule(&new_rule, other_rule));
                 json["SecurityGroup"] = sg.clone();
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
@@ -933,7 +934,7 @@ impl RicCall {
                                 _ => return bad_argument(req_id, json, "Flow required")
                             };
                             let new_rule = json::object!{
-                                "FromPortRange": require_arg!(in_json, "FromPortRange", json),
+                                "FromPortRange": require_arg!(in_json, "FromPortRange"),
                                 "IpProtocol":"unimplemented",
                                 "ToPortRange":2222,
                                 "IpRanges":[
