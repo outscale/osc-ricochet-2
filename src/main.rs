@@ -139,6 +139,7 @@ enum RicCall {
     DeleteKeypair,
     DeleteLoadBalancer,
     DeleteVms,
+    DeleteSecurityGroupRule,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -186,6 +187,39 @@ impl RicCall {
                 a["IpProtocol"] == b["IpProtocol"] &&
                 a["ToPortRange"] == b["ToPortRange"] &&
                 a["IpRanges"].members().eq(b["IpRanges"].members())
+        }
+
+        macro_rules! flow_to_str {
+            ($flow:expr) =>
+            {{
+                match $flow {
+                    true => "InboundRules",
+                    _ => "OutboundRules"
+                }
+            }}
+        }
+
+        macro_rules! require_arg {
+            ($in_json:expr, $arg:expr, $json:expr) => {{
+                match $in_json.has_key($arg) {
+                    true => $in_json[$arg].clone(),
+                    _ => return bad_argument(req_id, $json, format!("{} required", $arg).as_str())
+                }
+            }}
+        }
+
+        macro_rules! require_in_json {
+            ($bytes:expr, $json:expr) => {{
+                if bytes.is_empty() {
+                    return bad_argument(req_id, $json, "Argument require");
+                }
+                match json::parse(std::str::from_utf8(&bytes).unwrap()) {
+                    Ok(in_json) => in_json,
+                    Err(_) => {
+                        return bad_argument(req_id, $json, "Invalide json");
+                    }
+                }
+            }}
         }
 
         macro_rules! check_conflict {
@@ -833,7 +867,47 @@ impl RicCall {
                 json["Keypair"] = kp;
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
+            RicCall::DeleteSecurityGroupRule => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteSecurityGroupRule require v4 signature")
+                }
+
+                let in_json = require_in_json!(bytes, json);
+                let flow = match require_arg!(in_json, "Flow", json).as_str() {
+                    Some(s) => match s {
+                        "Inbound" => true,
+                        "Outbound" => false,
+                        _ => return bad_argument(req_id, json, "The direction of the flow must be `Inbound` or `Outbound`.")
+                    },
+                    _ => return bad_argument(req_id, json, "Flow must be a string")
+                };
+                let sg_id = require_arg!(in_json, "SecurityGroupId", json);
+                let user_sgs = &mut main_json[user_id]["SecurityGroups"];
+                let sg = match user_sgs.members_mut().find(|sg| sg_id == sg["SecurityGroupId"]) {
+                    Some(sg) => sg,
+                    _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
+                };
+
+                let new_rule = json::object!{
+                    "FromPortRange":1111,
+                    "IpProtocol":"unimplemented",
+                    "ToPortRange":2222,
+                    "IpRanges":[
+                        "unimplemented"
+                    ]
+                };
+                match sg[flow_to_str!(flow)].members().position(|other_rule| is_same_rule(&new_rule, other_rule)) {
+                    Some(idx) => sg[flow_to_str!(flow)].array_remove(idx),
+                    None => return bad_argument(req_id, json, "rule does not exist")
+                };
+                json["SecurityGroup"] = sg.clone();
+                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+            },
             RicCall::CreateSecurityGroupRule => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
+                }
+
                 if !bytes.is_empty() {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
@@ -867,14 +941,11 @@ impl RicCall {
                                 ]
                             };
 
-                            if flow == true {
-                                if sg["InboundRules"].members().find(|other_rule| is_same_rule(&new_rule, other_rule)) != None {
-                                    return bad_argument(req_id, json, "rule alerady exist");
-                                }
-                                sg["InboundRules"].push(new_rule).unwrap();
-                            } else {
-                                sg["OutboundRules"].push(new_rule).unwrap();
+                            if sg[flow_to_str!(flow)].members().find(|other_rule| is_same_rule(&new_rule, other_rule)) != None {
+                                return bad_argument(req_id, json, "rule alerady exist");
                             }
+                            // should check that the rule can be an outbound rule
+                            sg[flow_to_str!(flow)].push(new_rule).unwrap();
 
                             json["SecurityGroup"] = sg.clone();
                         },
@@ -1060,6 +1131,9 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
                 Ok(RicCall::DeleteLoadBalancer),
+            "/DeleteSecurityGroupRule" | "/api/v1/DeleteSecurityGroupRule" | "/api/latest/DeleteSecurityGroupRule" =>
+                Ok(RicCall::DeleteSecurityGroupRule),
+
             "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" =>
                 Ok(RicCall::ReadFlexibleGpus),
             "/ReadConsumptionAccount" |"/api/v1/ReadConsumptionAccount" | "/api/latest/ReadConsumptionAccount" =>
