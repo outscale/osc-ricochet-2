@@ -539,43 +539,36 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
                 }
                 let net_id = format!("vpc-{:08}", req_id);
+                let in_json = require_in_json!(bytes);
                 let mut net = json::object!{
-                    NetId: net_id
+                    NetId: net_id,
+                    State: "unimplemented",
+                    DhcpOptionsSetId: "unimplemented",
+                    Tags: json::array!{},
+                    Tenancy: optional_arg!(in_json, "Tenancy", "default")
                 };
 
-                if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            if in_json.has_key("IpRange") {
-                                let iprange = in_json["IpRange"].as_str().unwrap();
+                if in_json.has_key("IpRange") {
+                    let iprange = in_json["IpRange"].as_str().unwrap();
 
-                                let net_st: Result<Ipv4Net, _> = iprange.parse();
+                    let net_st: Result<Ipv4Net, _> = iprange.parse();
 
-                                match net_st {
-                                    Ok(range) => {
-                                        if range.prefix_len() != 16 && range.prefix_len() != 28 {
-                                            return bad_argument(req_id, json, "iprange size is nope")
-                                        }
-                                        net["IpRange"] = iprange.clone().into()
-                                    },
-                                    _ => return bad_argument(req_id, json,
-                                                             "you range is pure &@*$ i meam invalide")
-                                }
-                            } else {
-                                return bad_argument(req_id, json, "l'IpRange wesh !");
+                    match net_st {
+                        Ok(range) => {
+                            if range.prefix_len() != 16 && range.prefix_len() != 28 {
+                                return bad_argument(req_id, json, "iprange size is nope")
                             }
+                            net["IpRange"] = iprange.clone().into()
                         },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
+                        _ => return bad_argument(req_id, json,
+                                                 "you range is pure &@*$ i meam invalide")
                     }
                 } else {
                     return bad_argument(req_id, json, "l'IpRange wesh !");
                 }
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
-                json["Net"] = json::array!{net};
+                json["Net"] = net;
                 (jsonobj_to_strret(json, req_id), StatusCode::OK)
             },
             RicCall::ReadKeypairs => {
