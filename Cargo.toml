@@ -1,3 +1,11 @@
+[profile.sdks]
+inherits = "dev"
+opt-level = 0
+debug = 0
+lto = "off"
+debug-assertions = false
+overflow-checks = false
+
 [package]
 name = "ricochet-2"
 version = "0.1.0"
