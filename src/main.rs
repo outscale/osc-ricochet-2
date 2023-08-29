@@ -57,24 +57,24 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
 
 fn serv_error(req_id: usize , mut json: json::JsonValue,
                 error:  &str) ->
-    (String, hyper::StatusCode) {
+    Result<(String, StatusCode), (String, StatusCode)> {
         eprintln!("serv_Error: {}", error);
         json["Errors"] = json::array![json::object!{Details: error}];
-        (jsonobj_to_strret(json, req_id), StatusCode::from_u16(503).unwrap())
+        Err((jsonobj_to_strret(json, req_id), StatusCode::from_u16(503).unwrap()))
 }
 
 fn bad_argument(req_id: usize ,mut json: json::JsonValue,
                 error:  &str) ->
-    (String, hyper::StatusCode) {
+    Result<(String, StatusCode), (String, StatusCode)> {
         eprintln!("bad_argument: {}", error);
         json["Errors"] = json::array![json::object!{Details: error}];
-        (jsonobj_to_strret(json, req_id), StatusCode::from_u16(400).unwrap())
+        Err((jsonobj_to_strret(json, req_id), StatusCode::from_u16(400).unwrap()))
 }
 
 fn eval_bad_auth(req_id: usize ,mut json: json::JsonValue,
-                 error:  &str) -> (String, hyper::StatusCode) {
+                 error:  &str) -> Result<(String, StatusCode), (String, StatusCode)> {
     json["Errors"] = json::array![json::object!{Details: error}];
-    (jsonobj_to_strret(json, req_id), StatusCode::UNAUTHORIZED)
+    Err((jsonobj_to_strret(json, req_id), StatusCode::UNAUTHORIZED))
 }
 
 fn bad_auth(error: String) -> Result<Response<Body>,Infallible> {
@@ -103,7 +103,12 @@ fn remove_duplicate_slashes(path: &str) -> String {
     new_path
 }
 
-fn try_conver_response(res: (String, StatusCode), need_convert: bool) -> (String, hyper::StatusCode) {
+fn try_conver_response(rres: Result<(String, StatusCode), (String, StatusCode)>,
+                       need_convert: bool) -> (String, hyper::StatusCode) {
+    let res = match rres {
+        Ok(r) => r,
+        Err(r) => r
+    };
     if need_convert == false {
         return res
     }
@@ -139,6 +144,7 @@ enum RicCall {
     DeleteKeypair,
     DeleteLoadBalancer,
     DeleteVms,
+    DeleteTags,
     DeleteSecurityGroup,
     DeleteSecurityGroupRule,
 
@@ -181,7 +187,7 @@ impl RicCall {
             req_id: usize,
             headers: hyper::HeaderMap<hyper::header::HeaderValue>,
             auth : AuthType)
-            -> (String, hyper::StatusCode) {
+            -> Result<(String, hyper::StatusCode), (String, hyper::StatusCode)> {
 
         let mut json = json::JsonValue::new_object();
 
@@ -197,6 +203,15 @@ impl RicCall {
                 match $array.members().position($predicate) {
                     Some(idx) => $array.array_remove(idx),
                     None => return bad_argument(req_id, json, "Element not found(alerady destroy ?)")
+                }
+            }}
+        }
+
+        macro_rules! get_by_id {
+            ($resource_type:expr, $id_name:expr, $id:expr) => {{
+                match main_json[user_id][$resource_type].members_mut().position(|m| m[$id_name] == $id) {
+                    Some(idx) => Ok(($resource_type, idx)),
+                    None => Err(bad_argument(req_id, json.clone(), "Element id not found"))
                 }
             }}
         }
@@ -268,13 +283,13 @@ impl RicCall {
 
         match *self {
             RicCall::Root => {
-                ("Try POSTing to /ReadVms".to_string(), StatusCode::OK)
+                Ok(("Try POSTing to /ReadVms".to_string(), StatusCode::OK))
             },
             RicCall::Debug => {
                 let hdr = format!("{:?}", headers);
-                (format!("data: {}\nheaders: {}\n",
+                Ok((format!("data: {}\nheaders: {}\n",
                                String::from_utf8(bytes.to_vec()).unwrap(),
-                               hdr), StatusCode::OK)
+                               hdr), StatusCode::OK))
             },
             RicCall::ReadVms  => {
 
@@ -314,7 +329,7 @@ impl RicCall {
                         }
                     }
                 }
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteVms  => {
                 if auth != AuthType::AkSk {
@@ -359,7 +374,7 @@ impl RicCall {
                         }
                     }
                 }
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteLoadBalancer  => {
                 if auth != AuthType::AkSk {
@@ -384,7 +399,7 @@ impl RicCall {
                 } else {
                     return bad_argument(req_id, json, "Invalide json");
                 }
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteKeypair  => {
                 let user_kps = &mut main_json[user_id]["Keypairs"];
@@ -418,7 +433,7 @@ impl RicCall {
                         }
                     }
                 }
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateLoadBalancer => {
                 if auth != AuthType::AkSk {
@@ -501,7 +516,7 @@ impl RicCall {
                 main_json[user_id]["LoadBalancers"].push(
                     lb.clone()).unwrap();
                 json["LoadBalancer"] = lb;
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateImage => {
                 if auth != AuthType::AkSk {
@@ -532,7 +547,7 @@ impl RicCall {
                 main_json[user_id]["Images"].push(
                     image.clone()).unwrap();
                 json["Images"] = json::array!{image};
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateNet => {
                 if auth != AuthType::AkSk {
@@ -569,7 +584,7 @@ impl RicCall {
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
                 json["Net"] = net;
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadKeypairs => {
                 if auth != AuthType::AkSk {
@@ -585,7 +600,7 @@ impl RicCall {
                 }
                 json["Keypairs"] = kps;
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadNets => {
                 if auth != AuthType::AkSk {
@@ -596,7 +611,7 @@ impl RicCall {
 
                 json["Nets"] = (*user_nets).clone();
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadAccessKeys => {
                 json["AccessKeys"] = json::array![
@@ -607,7 +622,7 @@ impl RicCall {
                         LastModificationDate:"2020-01-28T10:58:41.000Z"
                     }];
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadPublicCatalog => {
 
@@ -630,7 +645,7 @@ impl RicCall {
                         ToDate: "2019-08-24T14:15:22Z"
                     }];
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadPublicIpRanges  => {
 
@@ -639,7 +654,7 @@ impl RicCall {
                     "34.14.44.22/24"
                 ];
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadRegions  => {
 
@@ -650,7 +665,7 @@ impl RicCall {
                     }
                 ];
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadSubregions  => {
                 json["Subregions"] = json::array![
@@ -667,7 +682,7 @@ impl RicCall {
                         LocationCode: "PAR1"
                     }
                 ];
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadAccounts  => {
                 let email = users[user_id]["login"].clone();
@@ -693,7 +708,7 @@ impl RicCall {
                             ZipCode: "5"
                     }];
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadImages  => {
                 if auth != AuthType::AkSk {
@@ -719,7 +734,7 @@ impl RicCall {
                 }
                 json["Images"] = (*user_imgs).clone();
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadSecurityGroups  => {
                 if auth != AuthType::AkSk {
@@ -730,7 +745,7 @@ impl RicCall {
 
                 json["SecurityGroups"] = (*user_dl).clone();
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadDirectLinks  => {
                 if auth != AuthType::AkSk {
@@ -741,7 +756,7 @@ impl RicCall {
 
                 json["DirectLinks"] = (*user_dl).clone();
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadVolumes  => {
                 if auth != AuthType::AkSk {
@@ -752,7 +767,7 @@ impl RicCall {
 
                 json["Volumes"] = (*user_imgs).clone();
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadLoadBalancers  => {
                 if auth != AuthType::AkSk {
@@ -763,11 +778,11 @@ impl RicCall {
 
                 json["LoadBalancers"] = (*user_vms).clone();
 
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadConsumptionAccount  => {
                 println!("RicCall::ReadConsumptionAccount !!!");
-                (jsonobj_to_strret(json::object!{
+                Ok((jsonobj_to_strret(json::object!{
                     ConsumptionEntries:
                     json::array!{
                         json::object!{
@@ -775,7 +790,7 @@ impl RicCall {
                             Value: 0
                         }
                     }
-                }, req_id), StatusCode::OK)
+                }, req_id), StatusCode::OK))
             },
             RicCall::ReadFlexibleGpus  => {
                 if auth != AuthType::AkSk {
@@ -812,7 +827,7 @@ impl RicCall {
                         }
                     }
                 }
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateKeypair => {
                 if auth != AuthType::AkSk {
@@ -872,7 +887,7 @@ impl RicCall {
                 main_json[user_id]["Keypairs"].push(
                     kp.clone()).unwrap();
                 json["Keypair"] = kp;
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteSecurityGroup => {
                 if auth != AuthType::AkSk {
@@ -893,7 +908,7 @@ impl RicCall {
                 } else {
                     array_remove!(user_sgs, |sg| sg["SecurityGroupId"] == id);
                 }
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteSecurityGroupRule => {
                 if auth != AuthType::AkSk {
@@ -927,7 +942,7 @@ impl RicCall {
                 array_remove!(sg[flow_to_str!(flow)],
                                  |other_rule| is_same_rule(&new_rule, other_rule));
                 json["SecurityGroup"] = sg.clone();
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSecurityGroupRule => {
                 if auth != AuthType::AkSk {
@@ -982,7 +997,7 @@ impl RicCall {
                 } else {
                     return bad_argument(req_id, json, "CreateSecurityGroupRule arguments needed");
                 }
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
             RicCall::CreateSecurityGroup => {
                 if auth != AuthType::AkSk {
@@ -1031,7 +1046,7 @@ impl RicCall {
                 main_json[user_id]["SecurityGroups"].push(
                     sg.clone()).unwrap();
                 json["SecurityGroup"] = sg;
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateVms => {
                 if auth != AuthType::AkSk {
@@ -1046,30 +1061,55 @@ impl RicCall {
                 main_json[user_id]["Vms"].push(
                     vm.clone()).unwrap();
                 json["Vms"] = json::array!{vm};
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
-            RicCall::CreateTags => {
+            RicCall::CreateTags|RicCall::DeleteTags => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateTags require v4 signature")
+                    return eval_bad_auth(req_id, json, "CreateTags/DeleteTags require v4 signature")
                 }
-                if bytes.is_empty() {
-                    return bad_argument(req_id, json, "Create Tags require: 'ResourceIds', 'Tags' argument");
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+                if !in_json.has_key("Tags") && !in_json.has_key("ResourceIds") {
+                    return bad_argument(req_id, json, "CreateTags/DeleteTags require: ResourceIds, Tags argument");
                 }
 
-                let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                match in_json {
-                    Ok(in_json) => {
-                        println!("{:#}", in_json.dump());
-                        if !in_json.has_key("Tags") && !in_json.has_key("ResourceIds") {
-                            return bad_argument(req_id, json, "Create Tags require: ResourceIds, Tags argument");
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalide json");
+                let tags = &in_json["Tags"];
+
+                // require error handling, then we could check tags validity
+                // tags.members().try_for_each(|t| require_arg(tags, "Key"); require_arg(tags, "Value") )
+                let resources_todo = in_json["ResourceIds"].members().map(|id| {
+                    match id.as_str() {
+                        Some(id) => match id.split_once("-") {
+                            Some((t, _)) => match t {
+                                "sg" => get_by_id!("SecurityGroups", "SecurityGroupId", id),
+                                "i" => get_by_id!("Vms", "VmId", id),
+                                "ami" => get_by_id!("Images", "ImageId", id),
+                                "fgpu" => get_by_id!("FlexibleGpus", "FlexibleGpuId", id),
+                                "vpc" => get_by_id!("Nets", "NetId", id),
+                                _ => Err(bad_argument(req_id, json.clone(), "invalide resource id"))
+                            },
+                            _ => Err(bad_argument(req_id, json.clone(), "invalide resource id"))
+                        },
+                        _ => Err(bad_argument(req_id, json.clone(), "invalide resource id"))
+                    }
+                }).collect::<Result<Vec<_>, _>>();
+
+                let resources_todo = match resources_todo {
+                    Ok(ok) => ok,
+                    Err(e) => return e
+                };
+                for (resource_t, idx) in resources_todo.iter() {
+                    for tag in tags.members() {
+                        let j = &mut main_json[user_id][*resource_t][*idx]["Tags"];
+                        match *self {
+                            RicCall::CreateTags => j.push((*tag).clone()).unwrap(),
+                            RicCall::DeleteTags => {array_remove!(j, |ot| tag.eq(ot));},
+                            _ => todo!()
+                        };
                     }
                 }
                 println!("CreateTags");
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadQuotas => {
                 if auth != AuthType::AkSk {
@@ -1099,7 +1139,7 @@ impl RicCall {
                         ],
                         QuotaType: "global"
                     }];
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateFlexibleGpu => {
                 if auth != AuthType::AkSk {
@@ -1120,7 +1160,7 @@ impl RicCall {
                 println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
                 json["FlexibleGpu"] = json::array!{fgpu_json.clone()};
                 user_fgpu.push(fgpu_json).unwrap();
-                (jsonobj_to_strret(json, req_id), StatusCode::OK)
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
         }
     }
@@ -1161,6 +1201,9 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteSecurityGroup),
             "/DeleteSecurityGroupRule" | "/api/v1/DeleteSecurityGroupRule" | "/api/latest/DeleteSecurityGroupRule" =>
                 Ok(RicCall::DeleteSecurityGroupRule),
+
+            "/DeleteTags" | "/api/v1/DeleteTags" | "/api/latest/DeleteTags" =>
+                Ok(RicCall::DeleteTags),
 
             "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" =>
                 Ok(RicCall::ReadFlexibleGpus),
