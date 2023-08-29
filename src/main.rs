@@ -141,6 +141,7 @@ enum RicCall {
     CreateSecurityGroup,
     CreateSecurityGroupRule,
 
+    DeleteNet,
     DeleteKeypair,
     DeleteLoadBalancer,
     DeleteVms,
@@ -584,6 +585,16 @@ impl RicCall {
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
                 json["Net"] = net;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::DeleteNet => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let user_nets = &mut main_json[user_id]["Nets"];
+                let id = require_arg!(in_json, "NetId");
+                array_remove!(user_nets, |n| n["NetId"] == id);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadKeypairs => {
@@ -1247,6 +1258,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadNets),
             "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
                 Ok(RicCall::CreateNet),
+            "/DeleteNet" | "/api/v1/DeleteNet" | "/api/latest/DeleteNet" =>
+                Ok(RicCall::DeleteNet),
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
