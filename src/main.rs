@@ -593,6 +593,7 @@ impl RicCall {
                 }
                 let in_json = require_in_json!(bytes);
                 let user_nets = &mut main_json[user_id]["Nets"];
+                // TODO: check net is destroyable
                 let id = require_arg!(in_json, "NetId");
                 array_remove!(user_nets, |n| n["NetId"] == id);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
@@ -1066,7 +1067,54 @@ impl RicCall {
                 let vm_id = format!("i-{:08}", req_id);
                 let vm = json::object!{
                     VmType: "small",
-                    VmId: vm_id
+                    "VmInitiatedShutdownBehavior": "stop",
+                    "State": "running",
+                    "StateReason": "",
+                    "RootDeviceType": "ebs",
+                    "RootDeviceName": "/dev/sda1",
+                    "IsSourceDestChecked": true,
+                    "KeypairName": "my_craft",
+                    "PublicIp": "100.200.60.100",
+                    "ImageId": "ami-00000000",
+                    "PublicDnsName": "ows-148-253-69-185.eu-west-2.compute.outscale.com",
+                    "DeletionProtection": false,
+                    "Architecture": "x86_64",
+                    "NestedVirtualization": false,
+                    "BlockDeviceMappings": [
+                        {
+                            "DeviceName": "/dev/sda1",
+                            "Bsu": {
+                                "VolumeId": "vol-6ce9a61e",
+                                "State": "attached",
+                                "LinkDate": "2022-08-01T13:37:54.356Z",
+                                "DeleteOnVmDeletion": true
+                            }
+                        }
+                    ],
+                    VmId: vm_id,
+                    "ReservationId": "r-a3df6a95",
+                    "Hypervisor": "xen",
+                    "Placement": {
+                        "Tenancy": "default",
+                        "SubregionName": "mud-half-3a"
+                    },
+                    "ProductCodes": [
+                        "0001"
+                    ],
+                    "CreationDate": "2022-08-01T13:37:54.356Z",
+                    "UserData": "",
+                    "PrivateIp": "10.0.00.0",
+                    "SecurityGroups": [
+                        {
+                            "SecurityGroupName": "default",
+                            "SecurityGroupId": "sg-d56a6db7"
+                        }
+                    ],
+                    "BsuOptimized": false,
+                    "LaunchNumber": 0,
+                    "Performance": "high",
+                    "Tags": [],
+                    "PrivateDnsName": "ip-10-8-41-9.eu-west-2.compute.internal"
                 };
 
                 main_json[user_id]["Vms"].push(
@@ -1167,7 +1215,7 @@ impl RicCall {
                     ModelName: "XOXO",
                     Tags: json::array!{},
                     State: "imaginary",
-                    SubregionName: "yes",
+                    SubregionName: "mud-half-3a",
                     VmId: "unlink"
                 };
 
