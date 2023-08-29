@@ -1075,8 +1075,11 @@ impl RicCall {
 
                 let tags = &in_json["Tags"];
 
-                // require error handling, then we could check tags validity
-                // tags.members().try_for_each(|t| require_arg(tags, "Key"); require_arg(tags, "Value") )
+                for t in tags.members() {
+                    require_arg!(t, "Key");
+                    require_arg!(t, "Value");
+                }
+
                 let resources_todo = in_json["ResourceIds"].members().map(|id| {
                     match id.as_str() {
                         Some(id) => match id.split_once("-") {
