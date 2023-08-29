@@ -1154,6 +1154,7 @@ impl RicCall {
                     FlexibleGpuId: format!("fgpu-{:08}", req_id),
                     Generation: "Wololo",
                     ModelName: "XOXO",
+                    Tags: json::array!{},
                     State: "imaginary",
                     SubregionName: "yes",
                     VmId: "unlink"
