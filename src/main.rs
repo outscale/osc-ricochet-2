@@ -10,7 +10,7 @@ use core::fmt::Write;
 use futures::lock::Mutex;
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{StatusCode};
+use hyper::StatusCode;
 use base64::{engine::general_purpose, Engine as _};
 //use hyper::header::{Headers, Authorization};
 use std::str::FromStr;
@@ -84,7 +84,7 @@ fn bad_auth(error: String) -> Result<Response<Body>,Infallible> {
     response.headers_mut().append("WWW-Authenticate", "Basic".parse().unwrap());
     *response.body_mut() = Body::from(error);
     *response.status_mut() = StatusCode::UNAUTHORIZED;
-    return Ok(response)
+    Ok(response)
 }
 
 fn remove_duplicate_slashes(path: &str) -> String {
@@ -109,14 +109,14 @@ fn try_conver_response(rres: Result<(String, StatusCode), (String, StatusCode)>,
         Ok(r) => r,
         Err(r) => r
     };
-    if need_convert == false {
+    if !need_convert {
         return res
     }
 
     let mut xml_builder = XmlBuilder::default();
     let xml = xml_builder.build_from_json_string(res.0.as_str());
 
-    return (xml.unwrap(), StatusCode::OK)
+    (xml.unwrap(), StatusCode::OK)
 }
 
 #[derive(PartialEq)]
@@ -172,14 +172,10 @@ enum RicCall {
 
 impl RicCall {
     fn is_free(&self) -> bool {
-        match *self {
-            RicCall::ReadPublicCatalog => true,
-            RicCall::ReadRegions => true,
-            RicCall::ReadPublicIpRanges => true,
-            _ => false
-        }
+        matches!(*self, RicCall::ReadPublicCatalog | RicCall::ReadRegions | RicCall::ReadPublicIpRanges)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn eval(&self,
             mut main_json: futures::lock::MutexGuard<'_, json::JsonValue, >,
             cfg: futures::lock::MutexGuard<'_, json::JsonValue, >,
@@ -265,7 +261,7 @@ impl RicCall {
                     println!("cmp ({}): {} with {}", concat!(stringify!($resource), "Name"),
                              k[concat!(stringify!($resource), "Name")].to_string(),
                              $to_check);
-                    if k[concat!(stringify!($resource), "Name")].to_string() == $to_check {
+                    if k[concat!(stringify!($resource), "Name")] == $to_check {
                         return bad_argument(req_id, $json, concat!(stringify!($resource),
                                                                   " Name conflict"));
                     }
@@ -349,9 +345,8 @@ impl RicCall {
                                 let ids = &in_json["VmIds"];
 
                                 json["Vms"] = json::JsonValue::new_array();
-                                let mut idx = 0;
                                 let mut rm_array = vec![];
-                                for vm in user_vms.members() {
+                                for (idx, vm) in user_vms.members().enumerate() {
                                     let mut need_rm = true;
 
                                     for id in ids.members() {
@@ -363,7 +358,6 @@ impl RicCall {
                                         json["Vms"].push((*vm).clone()).unwrap();
                                         rm_array.push(idx);
                                     }
-                                    idx += 1;
                                 }
                                 for i in rm_array {
                                     user_vms.array_remove(i);
@@ -875,6 +869,7 @@ impl RicCall {
                             let digest = x509.digest(MessageDigest::md5()).unwrap();
                             let mut digest_str = String::with_capacity(3 * digest.len());
                             let mut first_byte = true;
+                            #[allow(clippy::unnecessary_to_owned)]
                             for byte in digest.to_vec() {
                                 if !first_byte {
                                     write!(digest_str, ":").unwrap();
@@ -994,7 +989,7 @@ impl RicCall {
                                 ]
                             };
 
-                            if sg[flow_to_str!(flow)].members().find(|other_rule| is_same_rule(&new_rule, other_rule)) != None {
+                            if sg[flow_to_str!(flow)].members().any(|other_rule| is_same_rule(&new_rule, other_rule)) {
                                 return bad_argument(req_id, json, "rule alerady exist");
                             }
                             // should check that the rule can be an outbound rule
@@ -1141,7 +1136,7 @@ impl RicCall {
 
                 let resources_todo = in_json["ResourceIds"].members().map(|id| {
                     match id.as_str() {
-                        Some(id) => match id.split_once("-") {
+                        Some(id) => match id.split_once('-') {
                             Some((t, _)) => match t {
                                 "sg" => get_by_id!("SecurityGroups", "SecurityGroupId", id),
                                 "i" => get_by_id!("Vms", "VmId", id),
@@ -1314,17 +1309,17 @@ impl FromStr for RicCall {
     }
 }
 
-fn which_v4_to_date<'a>(which_v4: & 'a String) -> &'a str
+fn which_v4_to_date(which_v4: & String) -> &str
 {
     if which_v4 == "OSC4" {
         return "X-Osc-Date"
     } else if which_v4 == "AWS4" {
         return "X-Amz-Date"
     }
-    return "X-Unknow-Date"
+    "X-Unknow-Date"
 }
 
-fn clasify_v4<'a>(userpass: & 'a String) ->  Option<(&'a str, String)>
+fn clasify_v4(userpass: & str) ->  Option<(&str, String)>
 {
     let which: String;
 
@@ -1392,25 +1387,22 @@ async fn handler(req: Request<Body>,
             let decoded = general_purpose::STANDARD
                 .decode(based).unwrap();
             let stringified = std::str::from_utf8(&decoded).unwrap();
-            let tupeled = stringified.split_once(":").unwrap();
+            let (login, password) = stringified.split_once(':').unwrap();
 
-            match users.members().position(|u| {
-                let ret = u["login"] == tupeled.0;
+            if let Some(idx) = users.members().position(|u| {
+                let ret = u["login"] == login;
                 if auth_type < 1 {
                     return ret;
                 }
-                return u["pass"] == tupeled.1
+                u["pass"] == password
             }) {
-                Some(idx) => {
-                    user_id = idx;
-                    auth = match cfg["password_as_ak"] == true {
-                        true => AuthType::AkSk,
-                        _ => AuthType::Basic,
-                    };
-                },
-                _ => {}
+                user_id = idx;
+                auth = match cfg["password_as_ak"] == true {
+                    true => AuthType::AkSk,
+                    _ => AuthType::Basic,
+                };
             }
-        } else if cred != None {
+        } else if cred.is_some() {
             let cred = cred.unwrap();
             let which_v4 = cred.1;
             let cred = match cred.0.strip_prefix("Credential=") {
@@ -1427,7 +1419,7 @@ async fn handler(req: Request<Body>,
             match users.members().position(|u| {
                 let ret = u["access_key"] == ak;
 
-                if ret == false {
+                if !ret {
                     return false
                 }
 
@@ -1562,8 +1554,7 @@ async fn handler(req: Request<Body>,
                 hmac.update(str_to_sign.as_bytes());
                 let signature = hmac.finalize();
 
-                return format!("{:x}", signature.clone().into_bytes()) == send_signature;
-
+                format!("{:x}", signature.clone().into_bytes()) == send_signature
             }) {
                 Some(idx) => {
                     user_id = idx;
@@ -1591,10 +1582,7 @@ async fn handler(req: Request<Body>,
                     let mut path = uri.path().clone();
 
                     let in_json = json::parse(args_str);
-                    if in_json.is_ok() && in_json.unwrap().has_key("Action") {
-                        api = "icu".to_string()
-                    }
-                    else if path.contains("icu") {
+                    if (in_json.is_ok() && in_json.unwrap().has_key("Action")) || path.contains("icu") {
                         api = "icu".to_string()
                     }
                     if path.contains("directlinks") {
@@ -1629,8 +1617,8 @@ async fn handler(req: Request<Body>,
                         let split = args_str.split('&');
                         for s in split {
                             let mut split = s.split('=');
-                            let key = split.nth(0).unwrap();
-                            let val = split.nth(0);
+                            let key = split.next().unwrap();
+                            let val = split.next();
 
                             println!("is {} = {:?}", key, val);
                             if key == "Action" {
@@ -1679,7 +1667,7 @@ async fn handler(req: Request<Body>,
             *response.status_mut() = res.1;
             response.headers_mut().append("Content-Type", "application/json".parse().unwrap());
             *response.body_mut() = Body::from(res.0);
-            return Ok(response)
+            Ok(response)
         },
         _ => {
             let mut response = Response::new(Body::empty());
@@ -1726,10 +1714,7 @@ async fn main() {
             Keypairs: json::JsonValue::new_array(),
         }).unwrap();
     }
-    let tls = match cfg["tls"] == true {
-        true => true,
-        _ => false
-    };
+    let tls = matches!(cfg["tls"] == true, true);
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
     let cfg = Arc::new(Mutex::new(cfg));
