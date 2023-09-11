@@ -162,6 +162,7 @@ enum RicCall {
     ReadVolumes,
     ReadQuotas,
     ReadSecurityGroups,
+    ReadApiAccessPolicy,
 
     // Free Calls
     ReadPublicCatalog,
@@ -835,6 +836,13 @@ impl RicCall {
                 }
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::ReadApiAccessPolicy => {
+                json["ApiAccessPolicy"] = json::object!{
+                    "RequireTrustedEnv": false,
+                    "MaxAccessKeyExpirationSeconds": 0
+                };
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateKeypair => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateKeypair require v4 signature")
@@ -1287,6 +1295,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadVolumes),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
                 Ok(RicCall::ReadLoadBalancers),
+            "/ReadApiAccessPolicy" | "/api/v1/ReadApiAccessPolicy" | "/api/latest/ReadApiAccessPolicy" =>
+                Ok(RicCall::ReadApiAccessPolicy),
             "/ReadPublicCatalog" | "/api/v1/ReadPublicCatalog" | "/api/latest/ReadPublicCatalog" =>
                 Ok(RicCall::ReadPublicCatalog),
             "/ReadRegions" | "/api/v1/ReadRegions" | "/api/latest/ReadRegions" =>
