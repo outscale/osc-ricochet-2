@@ -11,7 +11,31 @@ but you're a free man, so you can try.
 
 if you want Ricochet to Rise and Shine, you need to have the right conf in the right place.
 
-1rst argumnent of ricochet is the configuration path. (see ./ricochet.json)
+1rst argumnent of ricochet is the configuration path.
+
+Example:
+```json
+{
+    "auth_type": "headarches", // either exist, headache or none, none ignore all auth, exist, check if the user exist but don't go futher, and headache do the full auth
+    "tls": false, // currently broken if true
+    "in_convertion": true, // support for FCU/ICU and other non outscale API
+    "password_as_ak": true, // password auth, is now consider as strong as ak/sk
+    "users": [ // can have multy users
+	{
+	    "access_key": "11112211111110000000",
+	    "secret_key": "0000001111112222223333334444445555555666",
+	    "login": "joe",
+	    "pass": "ashita wa dochida"
+	},
+	{
+	    "access_key": "11112211111110000333",
+	    "secret_key": "1000001111112222223333334444445555555666",
+	    "login": "titi",
+	    "pass": "toto"
+	}
+    ]
+}
+```
 
 # build
 
