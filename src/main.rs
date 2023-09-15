@@ -137,6 +137,7 @@ enum RicCall {
     CreateTags,
     CreateFlexibleGpu,
     CreateImage,
+    CreateVolume,
     CreateLoadBalancer,
     CreateSecurityGroup,
     CreateSecurityGroupRule,
@@ -765,6 +766,29 @@ impl RicCall {
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::CreateVolume => {
+                let in_json = require_in_json!(bytes);
+
+                let vol = json::object!{
+                    VolumeId: format!("vol-{:08}", req_id),
+                    Tags: [],
+                    VolumeType: optional_arg!(in_json, "VolumeType", "standard"),
+                    SubregionName: require_arg!(in_json, "SubregionName"),
+                    State: "creating",
+                    CreationDate: "2010-10-01T12:34:56.789Z",
+                    Iops: 100,
+                    LinkedVolumes: [],
+                    Size: optional_arg!(in_json, "Size", 10)
+                };
+
+                if !matches!(vol["VolumeType"].as_str().unwrap(), "io1" | "gp2" | "standard") {
+                    return bad_argument(req_id, json, "Bad VolumeType");
+                }
+                main_json[user_id]["Volumes"].push(
+                    vol.clone()).unwrap();
+                json["Volume"] = vol;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::ReadVolumes  => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
@@ -1149,6 +1173,7 @@ impl RicCall {
                                 "sg" => get_by_id!("SecurityGroups", "SecurityGroupId", id),
                                 "i" => get_by_id!("Vms", "VmId", id),
                                 "ami" => get_by_id!("Images", "ImageId", id),
+                                "vol" => get_by_id!("Volumes", "VolumeId", id),
                                 "fgpu" => get_by_id!("FlexibleGpus", "FlexibleGpuId", id),
                                 "vpc" => get_by_id!("Nets", "NetId", id),
                                 _ => Err(bad_argument(req_id, json.clone(), "invalide resource id"))
@@ -1293,6 +1318,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadSecurityGroups),
             "/ReadVolumes" | "/api/v1/ReadVolumes" | "/api/latest/ReadVolumes" =>
                 Ok(RicCall::ReadVolumes),
+            "/CreateVolume" | "/api/v1/CreateVolume" | "/api/latest/CreateVolume" =>
+                Ok(RicCall::CreateVolume),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
                 Ok(RicCall::ReadLoadBalancers),
             "/ReadApiAccessPolicy" | "/api/v1/ReadApiAccessPolicy" | "/api/latest/ReadApiAccessPolicy" =>
