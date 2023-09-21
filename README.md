@@ -51,6 +51,27 @@ cargo run [-- CONFIG.json]
 
 for config see [this](./ricochet-headarches.json) and [that](./ricochet.json) as example
 
+# ASCII Art
+```
+[osc-cli]
+    V
+(createVms)    ->    [ricochet-2]
+                           V
+                     (create a VM)
+                           V
+[osc-cli]    <----   (Send return)
+    V
+(Print Result)
+------- Some Time Latter with a diferent client ----
+ [curl]
+    V
+(ReadVms)      ->    [ricochet-2]
+                         V
+ [curl]     <- (Send earlier create VM)
+    V
+(print result)
+```
+
 # contribution
 
 You can open a PR, or an issue
