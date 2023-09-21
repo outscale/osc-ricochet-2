@@ -54,6 +54,7 @@ for config see [this](./ricochet-headarches.json) and [that](./ricochet.json) as
 # ASCII Art
 ```
 [oapi-cli]
+    |
     V
 (createVms)    ->    [ricochet-2]
                            |
@@ -65,7 +66,7 @@ for config see [this](./ricochet-headarches.json) and [that](./ricochet.json) as
     |
     V
 (Print Result)
-------- Some Time Latter with a diferent client ----
+------- Some time later with a different client ----
  [curl]
     |
     V
