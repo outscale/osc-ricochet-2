@@ -53,21 +53,27 @@ for config see [this](./ricochet-headarches.json) and [that](./ricochet.json) as
 
 # ASCII Art
 ```
-[osc-cli]
+[oapi-cli]
     V
 (createVms)    ->    [ricochet-2]
+                           |
                            V
                      (create a VM)
+                           |
                            V
-[osc-cli]    <----   (Send return)
+[oapi-cli]    <----   (Send return)
+    |
     V
 (Print Result)
 ------- Some Time Latter with a diferent client ----
  [curl]
+    |
     V
 (ReadVms)      ->    [ricochet-2]
+                         |
                          V
  [curl]     <- (Send earlier create VM)
+    |
     V
 (print result)
 ```
