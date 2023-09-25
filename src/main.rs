@@ -149,6 +149,7 @@ enum RicCall {
     DeleteTags,
     DeleteSecurityGroup,
     DeleteSecurityGroupRule,
+    DeleteFlexibleGpu,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -1231,6 +1232,14 @@ impl RicCall {
                     }];
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::DeleteFlexibleGpu => {
+                let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
+                let in_json = require_in_json!(bytes);
+                let id = require_arg!(in_json, "FlexibleGpuId");
+
+                array_remove!(user_fgpu, |fgpu| id == fgpu["FlexibleGpuId"]);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateFlexibleGpu => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
@@ -1304,6 +1313,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateTags),
             "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" =>
                 Ok(RicCall::CreateFlexibleGpu),
+            "/DeleteFlexibleGpu" | "/api/v1/DeleteFlexibleGpu" | "/api/latest/DeleteFlexibleGpu" =>
+                Ok(RicCall::DeleteFlexibleGpu),
             "/CreateImage" | "/api/v1/CreateImage" | "/api/latest/CreateImage" =>
                 Ok(RicCall::CreateImage),
             "/CreateLoadBalancer" | "/api/v1/CreateLoadBalancer" | "/api/latest/CreateLoadBalancer" =>
