@@ -1611,6 +1611,7 @@ async fn handler(req: Request<Body>,
 
     let to_call = match cfg["in_convertion"] == true {
         true => {
+            println!("path: {}", uri.path().clone());
             let ret = match uri.path() {
                 "/" | "/icu/" | "directlinks" | "fcu" => {
 
@@ -1673,6 +1674,14 @@ async fn handler(req: Request<Body>,
                                     out_convertion = true;
                                     api = "fcu".to_string();
                                     path = "/ReadRegions"
+                                } else if action == "DescribeImages" {
+                                    out_convertion = true;
+                                    api = "fcu".to_string();
+                                    path = "/ReadImages"
+                                } else if action == "DescribeInstances" {
+                                    out_convertion = true;
+                                    api = "fcu".to_string();
+                                    path = "/ReadVms"
                                 }
                             } else if key == "KeyName" {
                                 in_args["KeypairName"] = val.unwrap().into()
