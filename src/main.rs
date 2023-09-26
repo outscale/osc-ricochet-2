@@ -1015,54 +1015,43 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
                 }
 
-                if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            let sg_id = match in_json.has_key("SecurityGroupId") {
-                                true => in_json["SecurityGroupId"].clone(),
-                                _ => return bad_argument(req_id, json, "SecurityGroupId required")
-                            };
-                            let user_sgs = &mut main_json[user_id]["SecurityGroups"];
-                            let sg = match user_sgs.members_mut().find(|sg| sg_id == sg["SecurityGroupId"]) {
-                                Some(sg) => sg,
-                                _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
-                            };
-                            let flow = match in_json.has_key("Flow") {
-                                true => match in_json["Flow"].as_str() {
-                                    Some(s) => match s {
-                                        "Inbound" => true,
-                                        "Outbound" => false,
-                                        _ => return bad_argument(req_id, json, "The direction of the flow must be `Inbound` or `Outbound`.")
-                                    },
-                                    _ => return bad_argument(req_id, json, "Flow should be a string")
-                                },
-                                _ => return bad_argument(req_id, json, "Flow required")
-                            };
-                            let new_rule = json::object!{
-                                "FromPortRange": require_arg!(in_json, "FromPortRange"),
-                                "IpProtocol": optional_arg!(in_json, "IpProtocol", "-1"),
-                                "ToPortRange":2222,
-                                "IpRanges":[
-                                    "unimplemented"
-                                ]
-                            };
-
-                            if sg[flow_to_str!(flow)].members().any(|other_rule| is_same_rule(&new_rule, other_rule)) {
-                                return bad_argument(req_id, json, "rule alerady exist");
-                            }
-                            // should check that the rule can be an outbound rule
-                            sg[flow_to_str!(flow)].push(new_rule).unwrap();
-
-                            json["SecurityGroup"] = sg.clone();
+                let in_json = require_in_json!(bytes);
+                let sg_id = match in_json.has_key("SecurityGroupId") {
+                    true => in_json["SecurityGroupId"].clone(),
+                    _ => return bad_argument(req_id, json, "SecurityGroupId required")
+                };
+                let user_sgs = &mut main_json[user_id]["SecurityGroups"];
+                let sg = match user_sgs.members_mut().find(|sg| sg_id == sg["SecurityGroupId"]) {
+                    Some(sg) => sg,
+                    _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
+                };
+                let flow = match in_json.has_key("Flow") {
+                    true => match in_json["Flow"].as_str() {
+                        Some(s) => match s {
+                            "Inbound" => true,
+                            "Outbound" => false,
+                            _ => return bad_argument(req_id, json, "The direction of the flow must be `Inbound` or `Outbound`.")
                         },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
-                    }
-                } else {
-                    return bad_argument(req_id, json, "CreateSecurityGroupRule arguments needed");
+                        _ => return bad_argument(req_id, json, "Flow should be a string")
+                    },
+                    _ => return bad_argument(req_id, json, "Flow required")
+                };
+                let new_rule = json::object!{
+                    "FromPortRange": require_arg!(in_json, "FromPortRange"),
+                    "IpProtocol": optional_arg!(in_json, "IpProtocol", "-1"),
+                    "ToPortRange":2222,
+                    "IpRanges":[
+                        "unimplemented"
+                    ]
+                };
+
+                if sg[flow_to_str!(flow)].members().any(|other_rule| is_same_rule(&new_rule, other_rule)) {
+                    return bad_argument(req_id, json, "rule alerady exist");
                 }
+                // should check that the rule can be an outbound rule
+                sg[flow_to_str!(flow)].push(new_rule).unwrap();
+
+                json["SecurityGroup"] = sg.clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
             RicCall::CreateSecurityGroup => {
@@ -1077,37 +1066,26 @@ impl RicCall {
                     OutboundRules: json::array!{},
                     InboundRules: json::array!{},
                 };
-                if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            if in_json.has_key("SecurityGroupName") {
-                                sg["SecurityGroupName"] = in_json["SecurityGroupName"].clone();
-                            } else {
-                                return bad_argument(req_id, json, "SecurityGroupName missing");
-                            }
-
-                            if in_json.has_key("NetId") {
-                                let net_id = in_json["NetId"].clone();
-                                let user_nets = &mut main_json[user_id]["Nets"];
-                                match user_nets.members().position(|net| net_id == net["NetId"]) {
-                                    Some(_idx) => { sg["NetId"] = net_id },
-                                    _ => return bad_argument(req_id, json, "NetId doesn't corespond to a net id")
-                                }
-                            }
-
-                            if in_json.has_key("Description") {
-                                sg["Description"] = in_json["Description"].clone();
-                            } else {
-                                return bad_argument(req_id, json, "Description is needed")
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
-                    }
+                let in_json = require_in_json!(bytes);
+                if in_json.has_key("SecurityGroupName") {
+                    sg["SecurityGroupName"] = in_json["SecurityGroupName"].clone();
                 } else {
-                    return bad_argument(req_id, json, "CreateSecurityGroup arguments needed");
+                    return bad_argument(req_id, json, "SecurityGroupName missing");
+                }
+
+                if in_json.has_key("NetId") {
+                    let net_id = in_json["NetId"].clone();
+                    let user_nets = &mut main_json[user_id]["Nets"];
+                    match user_nets.members().position(|net| net_id == net["NetId"]) {
+                        Some(_idx) => { sg["NetId"] = net_id },
+                        _ => return bad_argument(req_id, json, "NetId doesn't corespond to a net id")
+                    }
+                }
+
+                if in_json.has_key("Description") {
+                    sg["Description"] = in_json["Description"].clone();
+                } else {
+                    return bad_argument(req_id, json, "Description is needed")
                 }
                 main_json[user_id]["SecurityGroups"].push(
                     sg.clone()).unwrap();
