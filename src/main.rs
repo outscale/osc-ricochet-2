@@ -141,6 +141,7 @@ enum RicCall {
     CreateLoadBalancer,
     CreateSecurityGroup,
     CreateSecurityGroupRule,
+    CreateDirectLink,
 
     DeleteNet,
     DeleteKeypair,
@@ -150,6 +151,7 @@ enum RicCall {
     DeleteSecurityGroup,
     DeleteSecurityGroupRule,
     DeleteFlexibleGpu,
+    DeleteDirectLink,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -984,6 +986,27 @@ impl RicCall {
                 json["SecurityGroup"] = sg.clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::CreateDirectLink => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadDirectLinks require v4 signature")
+                }
+
+                let in_json = require_in_json!(bytes);
+
+                let dl = json::object!{
+                    AccountId: format!("{:08}", user_id),
+                    Bandwidth: require_arg!(in_json, "Bandwidth"),
+                    DirectLinkId: format!("dxcon-{:08}", req_id),
+                    DirectLinkName: require_arg!(in_json, "DirectLinkName"),
+                    "Location": "PAR1",
+                    "RegionName": "eu-west-2",
+                    "State": "requested"
+                };
+                main_json[user_id]["DirectLinks"].push(
+                    dl.clone()).unwrap();
+                json["DirectLink"] = dl;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateSecurityGroupRule => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
@@ -1240,6 +1263,14 @@ impl RicCall {
                 array_remove!(user_fgpu, |fgpu| id == fgpu["FlexibleGpuId"]);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::DeleteDirectLink => {
+                let user_fgpu = &mut main_json[user_id]["DirectLinks"];
+                let in_json = require_in_json!(bytes);
+                let id = require_arg!(in_json, "DirectLinkId");
+
+                array_remove!(user_fgpu, |fgpu| id == fgpu["DirectLinkId"]);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateFlexibleGpu => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
@@ -1293,10 +1324,14 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateSecurityGroup),
             "/CreateSecurityGroupRule" | "/api/v1/CreateSecurityGroupRule" | "/api/latest/CreateSecurityGroupRule" =>
                 Ok(RicCall::CreateSecurityGroupRule),
+            "/CreateDirectLink" | "/api/v1/CreateDirectLink" | "/api/latest/CreateDirectLink" =>
+                Ok(RicCall::CreateDirectLink),
             "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
                 Ok(RicCall::DeleteVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
                 Ok(RicCall::DeleteLoadBalancer),
+            "/DeleteDirectLink" | "/api/v1/DeleteDirectLink" | "/api/latest/DeleteDirectLink" =>
+                Ok(RicCall::DeleteDirectLink),
             "/DeleteSecurityGroup" | "/api/v1/DeleteSecurityGroup" | "/api/latest/DeleteSecurityGroup" =>
                 Ok(RicCall::DeleteSecurityGroup),
             "/DeleteSecurityGroupRule" | "/api/v1/DeleteSecurityGroupRule" | "/api/latest/DeleteSecurityGroupRule" =>
