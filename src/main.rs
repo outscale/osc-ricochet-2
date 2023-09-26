@@ -1002,6 +1002,9 @@ impl RicCall {
                     "RegionName": "eu-west-2",
                     "State": "requested"
                 };
+                if dl["Bandwidth"] != "1Gbps" && dl["Bandwidth"] != "10Gbps" {
+                    return bad_argument(req_id, json, "Bandwidth need to be either '1Gbps' or '10Gbps'")
+                }
                 main_json[user_id]["DirectLinks"].push(
                     dl.clone()).unwrap();
                 json["DirectLink"] = dl;
@@ -1256,6 +1259,9 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteFlexibleGpu => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
+                }
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
                 let in_json = require_in_json!(bytes);
                 let id = require_arg!(in_json, "FlexibleGpuId");
@@ -1264,6 +1270,9 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteDirectLink => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
+                }
                 let user_fgpu = &mut main_json[user_id]["DirectLinks"];
                 let in_json = require_in_json!(bytes);
                 let id = require_arg!(in_json, "DirectLinkId");
