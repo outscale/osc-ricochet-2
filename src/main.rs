@@ -1059,19 +1059,16 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
                 }
                 let sg_id = format!("sg-{:08}", req_id);
+                let in_json = require_in_json!(bytes);
                 let mut sg = json::object!{
                     Tags: json::array!{},
                     SecurityGroupId: sg_id,
                     AccountId: format!("{:08}", user_id),
                     OutboundRules: json::array!{},
                     InboundRules: json::array!{},
+                    SecurityGroupName: require_arg!(in_json, "SecurityGroupName"),
+                    Description: require_arg!(in_json, "Description"),
                 };
-                let in_json = require_in_json!(bytes);
-                if in_json.has_key("SecurityGroupName") {
-                    sg["SecurityGroupName"] = in_json["SecurityGroupName"].clone();
-                } else {
-                    return bad_argument(req_id, json, "SecurityGroupName missing");
-                }
 
                 if in_json.has_key("NetId") {
                     let net_id = in_json["NetId"].clone();
@@ -1082,11 +1079,6 @@ impl RicCall {
                     }
                 }
 
-                if in_json.has_key("Description") {
-                    sg["Description"] = in_json["Description"].clone();
-                } else {
-                    return bad_argument(req_id, json, "Description is needed")
-                }
                 main_json[user_id]["SecurityGroups"].push(
                     sg.clone()).unwrap();
                 json["SecurityGroup"] = sg;
