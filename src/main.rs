@@ -522,9 +522,9 @@ impl RicCall {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
                 }
-                let image_id = format!("ami-{:08}", req_id);
+                let image_id = format!("ami-{:08x}", req_id);
                 let mut image = json::object!{
-                    AccountId: format!("{:08}", user_id),
+                    AccountId: format!("{:08x}", user_id),
                     ImageId: image_id
                 };
                 if !users[user_id]["login"].is_null() {
@@ -553,7 +553,7 @@ impl RicCall {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
                 }
-                let net_id = format!("vpc-{:08}", req_id);
+                let net_id = format!("vpc-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
                 let mut net = json::object!{
                     NetId: net_id,
@@ -773,7 +773,7 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
 
                 let vol = json::object!{
-                    VolumeId: format!("vol-{:08}", req_id),
+                    VolumeId: format!("vol-{:08x}", req_id),
                     Tags: [],
                     VolumeType: optional_arg!(in_json, "VolumeType", "standard"),
                     SubregionName: require_arg!(in_json, "SubregionName"),
@@ -820,7 +820,7 @@ impl RicCall {
                     ConsumptionEntries:
                     json::array!{
                         json::object!{
-                            AccountId: format!("{:08}", user_id),
+                            AccountId: format!("{:08x}", user_id),
                             Value: 0
                         }
                     }
@@ -994,9 +994,9 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
 
                 let dl = json::object!{
-                    AccountId: format!("{:08}", user_id),
+                    AccountId: format!("{:08x}", user_id),
                     Bandwidth: require_arg!(in_json, "Bandwidth"),
-                    DirectLinkId: format!("dxcon-{:08}", req_id),
+                    DirectLinkId: format!("dxcon-{:08x}", req_id),
                     DirectLinkName: require_arg!(in_json, "DirectLinkName"),
                     "Location": "PAR1",
                     "RegionName": "eu-west-2",
@@ -1058,12 +1058,12 @@ impl RicCall {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
                 }
-                let sg_id = format!("sg-{:08}", req_id);
+                let sg_id = format!("sg-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
                 let mut sg = json::object!{
                     Tags: json::array!{},
                     SecurityGroupId: sg_id,
-                    AccountId: format!("{:08}", user_id),
+                    AccountId: format!("{:08x}", user_id),
                     OutboundRules: json::array!{},
                     InboundRules: json::array!{},
                     SecurityGroupName: require_arg!(in_json, "SecurityGroupName"),
@@ -1088,7 +1088,7 @@ impl RicCall {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateVms require v4 signature")
                 }
-                let vm_id = format!("i-{:08}", req_id);
+                let vm_id = format!("i-{:08x}", req_id);
                 let vm = json::object!{
                     VmType: "small",
                     "VmInitiatedShutdownBehavior": "stop",
@@ -1208,7 +1208,7 @@ impl RicCall {
                             json::object!{
                                 ShortDescription: "VM Limit",
                                 QuotaCollection: "Compute",
-                                AccountId: format!("{:08}", user_id),
+                                AccountId: format!("{:08x}", user_id),
                                 Description: "Maximum number of VM this user can own",
                                 MaxValue: "not implemented",
                                 UsedValue: "not implemented",
@@ -1217,7 +1217,7 @@ impl RicCall {
                             json::object!{
                                 ShortDescription: "Bypass Group Size Limit",
                                 QuotaCollection: "Other",
-                                AccountId: format!("{:08}", user_id),
+                                AccountId: format!("{:08x}", user_id),
                                 Description: "Maximum size of a bypass group",
                                 MaxValue: "not implemented",
                                 UsedValue: "not implemented",
@@ -1257,7 +1257,7 @@ impl RicCall {
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
                 let fgpu_json = json::object!{
                     DeleteOnVmDeletion: false,
-                    FlexibleGpuId: format!("fgpu-{:08}", req_id),
+                    FlexibleGpuId: format!("fgpu-{:08x}", req_id),
                     Generation: "Wololo",
                     ModelName: "XOXO",
                     Tags: json::array!{},
@@ -1772,18 +1772,30 @@ async fn main() {
     };
     println!("{:#}", cfg.dump());
     let mut connection = json::JsonValue::new_array();
+    let mut cnt_users = 0;
     for _m in cfg["users"].members() {
         connection.push(json::object!{
             Vms: json::JsonValue::new_array(),
             FlexibleGpus: json::JsonValue::new_array(),
             LoadBalancers: json::JsonValue::new_array(),
-            SecurityGroups: json::JsonValue::new_array(),
             Images: json::JsonValue::new_array(),
+            SecurityGroups: json::array!{
+                json::object!{
+                    Tags: json::array!{},
+                    SecurityGroupId: format!("sg-{:08x}", 0xffffff00u32),
+                    AccountId: format!("{:08x}", cnt_users),
+                    OutboundRules: json::array!{},
+                    InboundRules: json::array!{},
+                    SecurityGroupName: "default",
+                    Description: "default security group",
+                }
+            },
             DirectLinks: json::JsonValue::new_array(),
             Nets: json::JsonValue::new_array(),
             Volumes: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
         }).unwrap();
+        cnt_users += 1;
     }
     let tls = matches!(cfg["tls"] == true, true);
     let connection = Mutex::new(connection);
