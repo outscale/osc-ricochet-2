@@ -1632,6 +1632,8 @@ async fn handler(req: Request<Body>,
         } else if auth != AuthType::None {
             return bad_auth("\"Authorization Header wrong Format\"".to_string());
         }
+    } else {
+        auth = AuthType::AkSk
     }
 
     let to_call = match cfg["in_convertion"] == true {
@@ -1772,8 +1774,7 @@ async fn main() {
     };
     println!("{:#}", cfg.dump());
     let mut connection = json::JsonValue::new_array();
-    let mut cnt_users = 0;
-    for _m in cfg["users"].members() {
+    for (cnt_users, _m) in cfg["users"].members().enumerate() {
         connection.push(json::object!{
             Vms: json::JsonValue::new_array(),
             FlexibleGpus: json::JsonValue::new_array(),
@@ -1795,7 +1796,6 @@ async fn main() {
             Volumes: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
         }).unwrap();
-        cnt_users += 1;
     }
     let tls = matches!(cfg["tls"] == true, true);
     let connection = Mutex::new(connection);
