@@ -1,0 +1,5 @@
+{
+    "auth_type": "none",
+    "tls": true,
+    "in_convertion": true
+}
