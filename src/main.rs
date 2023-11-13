@@ -1761,7 +1761,7 @@ async fn main() {
         _ => format!("{}/.osc/ricochet.json",
                      env::var("HOME").unwrap())
     };
-    let cfg = match fs::read_to_string(&usr_cfg_path) {
+    let mut cfg = match fs::read_to_string(&usr_cfg_path) {
         Ok(users) => json::parse(users.as_str()).unwrap(),
         Err(error) => {
             println!("error opening {}: {}, Defaulting to no auth\n", usr_cfg_path, error);
@@ -1772,6 +1772,9 @@ async fn main() {
             }
         }
     };
+    if !cfg.has_key("users") {
+        cfg["users"] = json::array![{}];
+    }
     println!("{:#}", cfg.dump());
     let mut connection = json::JsonValue::new_array();
     for (cnt_users, _m) in cfg["users"].members().enumerate() {
@@ -1798,6 +1801,7 @@ async fn main() {
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
+    println!("before handler {}", connection.dump());
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
     let cfg = Arc::new(Mutex::new(cfg));
@@ -1807,12 +1811,11 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
 
     let any_server = match tls {
-        true => match hyper_from_pem_files("cert.pem", "key.pem", Protocols::ALL, &addr) {
+        true => match hyper_from_pem_files("cert.crt", "cert.key", Protocols::ALL, &addr) {
             Ok(server) => server.serve(
                 make_service_fn( move |_| { // first move it into the closure
                     // closure can be called multiple times, so for each call, we must
                     // clone it and move that clone into the async block
-                    println!("before handler -1");
                     let connection = connection.clone();
                     let requet_id = requet_id.clone();
                     let cfg = cfg.clone();
