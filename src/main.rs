@@ -1801,7 +1801,6 @@ async fn main() {
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
-    println!("before handler {}", connection.dump());
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
     let cfg = Arc::new(Mutex::new(cfg));
@@ -1825,7 +1824,6 @@ async fn main() {
                             let connection =  connection.clone();
                             let id = requet_id.fetch_add(1, Ordering::Relaxed);
                             let cfg = cfg.clone();
-                            println!("before handler");
                             // but this closure may also be called multiple times, so make
                             // a clone for each call, and move the clone into the async block
                             async move { handler(_req, &connection, id, &cfg).await }
