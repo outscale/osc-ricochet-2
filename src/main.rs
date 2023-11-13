@@ -557,7 +557,7 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
                 let mut net = json::object!{
                     NetId: net_id,
-                    State: "unimplemented",
+                    State: "available",
                     DhcpOptionsSetId: "unimplemented",
                     Tags: json::array!{},
                     Tenancy: optional_arg!(in_json, "Tenancy", "default")
