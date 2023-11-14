@@ -142,6 +142,7 @@ enum RicCall {
     CreateSecurityGroup,
     CreateSecurityGroupRule,
     CreateDirectLink,
+    CreateInternetService,
 
     DeleteNet,
     DeleteKeypair,
@@ -152,6 +153,7 @@ enum RicCall {
     DeleteSecurityGroupRule,
     DeleteFlexibleGpu,
     DeleteDirectLink,
+    DeleteInternetService,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -167,6 +169,7 @@ enum RicCall {
     ReadQuotas,
     ReadSecurityGroups,
     ReadApiAccessPolicy,
+    ReadInternetServices,
 
     // Free Calls
     ReadPublicCatalog,
@@ -586,6 +589,17 @@ impl RicCall {
                 json["Net"] = net;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::DeleteInternetService => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let user_iwgs = &mut main_json[user_id]["InternetServices"];
+                // TODO: check net is destroyable
+                let id = require_arg!(in_json, "InternetServiceId");
+                array_remove!(user_iwgs, |n| n["InternetServiceId"] == id);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            }
             RicCall::DeleteNet => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
@@ -790,6 +804,17 @@ impl RicCall {
                 main_json[user_id]["Volumes"].push(
                     vol.clone()).unwrap();
                 json["Volume"] = vol;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::ReadInternetServices  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
+                }
+
+                let user_imgs = &main_json[user_id]["InternetServices"];
+
+                json["InternetServices"] = (*user_imgs).clone();
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadVolumes  => {
@@ -1008,6 +1033,20 @@ impl RicCall {
                 main_json[user_id]["DirectLinks"].push(
                     dl.clone()).unwrap();
                 json["DirectLink"] = dl;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateInternetService => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
+                }
+                let igw = json::object!{
+                    InternetServiceId: format!("igw-{:08x}", req_id),
+                    Tags: json::array!{},
+                };
+
+                main_json[user_id]["InternetServices"].push(
+                    igw.clone()).unwrap();
+                json["InternetService"] = igw;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSecurityGroupRule => {
@@ -1305,6 +1344,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateSecurityGroupRule),
             "/CreateDirectLink" | "/api/v1/CreateDirectLink" | "/api/latest/CreateDirectLink" =>
                 Ok(RicCall::CreateDirectLink),
+            "/CreateInternetService" | "/api/v1/CreateInternetService" | "/api/latest/CreateInternetService" =>
+                Ok(RicCall::CreateInternetService),
+            "/DeleteInternetService" | "/api/v1/DeleteInternetService" | "/api/latest/DeleteInternetService" =>
+                Ok(RicCall::DeleteInternetService),
             "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
                 Ok(RicCall::DeleteVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
@@ -1361,6 +1404,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadQuotas),
             "/ReadNets" | "/api/v1/ReadNets" | "/api/latest/ReadNets" =>
                 Ok(RicCall::ReadNets),
+            "/ReadInternetServices" | "/api/v1/ReadInternetServices" | "/api/latest/ReadInternetServices" =>
+                Ok(RicCall::ReadInternetServices),
             "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
                 Ok(RicCall::CreateNet),
             "/DeleteNet" | "/api/v1/DeleteNet" | "/api/latest/DeleteNet" =>
@@ -1798,6 +1843,7 @@ async fn main() {
             Nets: json::JsonValue::new_array(),
             Volumes: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
+            InternetServices: json::JsonValue::new_array(),
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
