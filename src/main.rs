@@ -177,6 +177,9 @@ enum RicCall {
     ReadInternetServices,
     ReadPublicIps,
 
+    LinkInternetService,
+    UnlinkInternetService,
+
     // Free Calls
     ReadPublicCatalog,
     ReadRegions,
@@ -595,6 +598,48 @@ impl RicCall {
                 json["Net"] = net;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::LinkInternetService => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let id = require_arg!(in_json, "InternetServiceId");
+                let net_id = require_arg!(in_json, "NetId");
+
+                let net_idx = get_by_id!("Nets", "NetId", net_id);
+                let user_iwgs = &mut main_json[user_id]["InternetServices"];
+                let iwg = match user_iwgs.members_mut().find(|iwg| id == iwg["InternetServiceId"]) {
+                    Some(iwg) => iwg,
+                    _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
+                };
+
+                match net_idx {
+                    Ok(_) => {iwg["NetId"] = net_id},
+                    _ => return bad_argument(req_id, json, "Net not found")
+                };
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::UnlinkInternetService => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let id = require_arg!(in_json, "InternetServiceId");
+                let net_id = require_arg!(in_json, "NetId");
+
+                let net_idx = get_by_id!("Nets", "NetId", net_id);
+                let user_iwgs = &mut main_json[user_id]["InternetServices"];
+                let iwg = match user_iwgs.members_mut().find(|iwg| id == iwg["InternetServiceId"]) {
+                    Some(iwg) => iwg,
+                    _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
+                };
+
+                match net_idx {
+                    Ok(_) => {iwg.remove("NetId")},
+                    _ => return bad_argument(req_id, json, "Net not found")
+                };
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::DeleteInternetService => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
@@ -605,7 +650,7 @@ impl RicCall {
                 let id = require_arg!(in_json, "InternetServiceId");
                 array_remove!(user_iwgs, |n| n["InternetServiceId"] == id);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
-            }
+            },
             RicCall::DeletePublicIp => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
@@ -616,7 +661,7 @@ impl RicCall {
                 let id = require_arg!(in_json, "PublicIpId");
                 array_remove!(user_iwgs, |n| n["PublicIpId"] == id);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
-            }
+            },
             RicCall::DeleteNet => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
@@ -1390,8 +1435,16 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateDirectLink),
             "/CreateInternetService" | "/api/v1/CreateInternetService" | "/api/latest/CreateInternetService" =>
                 Ok(RicCall::CreateInternetService),
+
+            "/LinkInternetService" | "/api/v1/LinkInternetService" | "/api/latest/LinkInternetService" =>
+                Ok(RicCall::LinkInternetService),
+            "/UnlinkInternetService" | "/api/v1/UnlinkInternetService" | "/api/latest/UnlinkInternetService" =>
+                Ok(RicCall::UnlinkInternetService),
+
             "/CreatePublicIp" | "/api/v1/CreatePublicIp" | "/api/latest/CreatePublicIp" =>
                 Ok(RicCall::CreatePublicIp),
+
+
             "/DeleteInternetService" | "/api/v1/DeleteInternetService" | "/api/latest/DeleteInternetService" =>
                 Ok(RicCall::DeleteInternetService),
             "/DeletePublicIp" | "/api/v1/DeletePublicIp" | "/api/latest/DeletePublicIp" =>
