@@ -28,6 +28,9 @@ use openssl::pkey::PKey;
 use openssl::hash::MessageDigest;
 use std::ops::Deref;
 
+use std::net::Ipv4Addr;
+use rand::{thread_rng, Rng};
+
 type HmacSha256 = Hmac<Sha256>;
 
 fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
@@ -1064,9 +1067,11 @@ impl RicCall {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
                 }
+                let mut rng = thread_rng();
                 let eip = json::object!{
                     PublicIpId: format!("eipalloc-{:08x}", req_id),
                     Tags: json::array!{},
+                    PublicIp: Ipv4Addr::from(rng.gen_range(0..std::u32::MAX)).to_string()
                 };
 
                 main_json[user_id]["PublicIps"].push(

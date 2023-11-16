@@ -25,3 +25,4 @@ pem = "2.0.1"
 openssl = "0.10.52"
 xml2json-rs = "1.0.1"
 simple-hyper-server-tls = { version = "0.3.2", features = ["tls-openssl"]}
+rand = "0.8.5"
