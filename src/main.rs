@@ -147,8 +147,11 @@ enum RicCall {
     CreateDirectLink,
     CreateInternetService,
     CreatePublicIp,
+    CreateSubnet,
+    CreateRouteTable,
 
     DeleteNet,
+    DeleteSubnet,
     DeleteKeypair,
     DeleteLoadBalancer,
     DeleteVms,
@@ -159,6 +162,7 @@ enum RicCall {
     DeleteDirectLink,
     DeleteInternetService,
     DeletePublicIp,
+    DeleteRouteTable,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -176,9 +180,13 @@ enum RicCall {
     ReadApiAccessPolicy,
     ReadInternetServices,
     ReadPublicIps,
+    ReadRouteTables,
+    ReadSubnets,
 
     LinkInternetService,
     UnlinkInternetService,
+    LinkRouteTable,
+    UnlinkRouteTable,
 
     // Free Calls
     ReadPublicCatalog,
@@ -561,9 +569,64 @@ impl RicCall {
                 json["Images"] = json::array!{image};
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::CreateSubnet => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateSubnet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let ip_range = require_arg!(in_json, "IpRange");
+                let net_id = require_arg!(in_json, "NetId");
+                let mut subnet = json::object!{
+                    SubnetId: format!("subnet-{:08x}", req_id),
+                    State: "available",
+                    AvailableIpsCount: 16379,
+                    Tags: json::array!{},
+                    MapPublicIpOnLaunch: false
+                };
+                if in_json.has_key("SubregionName") {
+                    subnet["SubregionName"] = in_json["SubregionName"].clone();
+                }
+
+                let user_nets = &mut main_json[user_id]["Nets"];
+                match user_nets.members_mut().find(|net| net_id == net["NetId"]) {
+                    Some(_) => {
+                        // I should check the range is valide here.
+                        subnet["IpRange"] = ip_range;
+                        subnet["NetId"] = net_id;
+                    },
+                    _ => return bad_argument(req_id, json, "NetId doesn't corespond to an existing Net")
+                };
+                main_json[user_id]["Subnets"].push(
+                    subnet.clone()).unwrap();
+                json["Subnet"] = subnet;
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::DeleteRouteTable => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteRouteTable require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let user_nets = &mut main_json[user_id]["RouteTables"];
+                // TODO: check subnet is destroyable
+                let id = require_arg!(in_json, "RouteTableId");
+                array_remove!(user_nets, |n| n["RouteTableId"] == id);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::DeleteSubnet => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteSubnet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let user_nets = &mut main_json[user_id]["Subnets"];
+                // TODO: check subnet is destroyable
+                let id = require_arg!(in_json, "SubnetId");
+                array_remove!(user_nets, |n| n["SubnetId"] == id);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateNet => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
+                    return eval_bad_auth(req_id, json, "CreateNet require v4 signature")
                 }
                 let net_id = format!("vpc-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
@@ -596,6 +659,47 @@ impl RicCall {
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
                 json["Net"] = net;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateRouteTable => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let net_id = require_arg!(in_json, "NetId");
+                let mut rt = json::object!{
+                    Tags: json::array!{},
+                    RoutePropagatingVirtualGateways: json::array!{},
+                    LinkRouteTables: json::array!{},
+                    Routes: json::array!{
+                        json::object!{
+                            DestinationIpRange: "10.0.0.0/16",
+                            CreationMethod: "CreateRouteTable",
+                            State: "active"
+                        },
+                    },
+                    RouteTableId: format!("rtb-{:08x}", req_id)
+                };
+
+                match get_by_id!("Nets", "NetId", net_id) {
+                    Ok(_) => {rt["NetId"] = net_id},
+                    _ => return bad_argument(req_id, json, "Net not found")
+                }
+                main_json[user_id]["RouteTables"].push(
+                    rt.clone()).unwrap();
+                json["RouteTable"] = rt;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::LinkRouteTable => {
+                /* Still todo */
+                json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
+                let in_json = require_in_json!(bytes);
+                json["LinkRouteTableId"] = require_arg!(in_json, "RouteTableId");
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::UnlinkRouteTable => {
+                /* Still todo */
+                json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkInternetService => {
@@ -868,9 +972,31 @@ impl RicCall {
                 json["Volume"] = vol;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::ReadRouteTables  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadRouteTables require v4 signature")
+                }
+
+                let user_rts = &main_json[user_id]["RouteTables"];
+
+                json["RouteTables"] = (*user_rts).clone();
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::ReadSubnets  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadSubnets require v4 signature")
+                }
+
+                let user_rts = &main_json[user_id]["Subnets"];
+
+                json["Subnets"] = (*user_rts).clone();
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::ReadInternetServices  => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
+                    return eval_bad_auth(req_id, json, "ReadInternetServices require v4 signature")
                 }
 
                 let user_imgs = &main_json[user_id]["InternetServices"];
@@ -881,7 +1007,7 @@ impl RicCall {
             },
             RicCall::ReadPublicIps  => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
+                    return eval_bad_auth(req_id, json, "ReadPublicIps require v4 signature")
                 }
 
                 let user_imgs = &main_json[user_id]["PublicIps"];
@@ -1513,6 +1639,23 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateNet),
             "/DeleteNet" | "/api/v1/DeleteNet" | "/api/latest/DeleteNet" =>
                 Ok(RicCall::DeleteNet),
+            "/DeleteSubnet" | "/api/v1/DeleteSubnet" | "/api/latest/DeleteSubnet" =>
+                Ok(RicCall::DeleteSubnet),
+            "/CreateSubnet" | "/api/v1/CreateSubnet" | "/api/latest/CreateSubnet" =>
+                Ok(RicCall::CreateSubnet),
+            "/ReadSubnets" | "/api/v1/ReadSubnets" | "/api/latest/ReadSubnets" =>
+                Ok(RicCall::ReadSubnets),
+
+            "/CreateRouteTable" | "/api/v1/CreateRouteTable" | "/api/latest/CreateRouteTable" =>
+                Ok(RicCall::CreateRouteTable),
+            "/DeleteRouteTable" | "/api/v1/DeleteRouteTable" | "/api/latest/DeleteRouteTable" =>
+                Ok(RicCall::DeleteRouteTable),
+            "/LinkRouteTable" | "/api/v1/LinkRouteTable" | "/api/latest/LinkRouteTable" =>
+                Ok(RicCall::LinkRouteTable),
+            "/UnlinkRouteTable" | "/api/v1/UnlinkRouteTable" | "/api/latest/UnlinkRouteTable" =>
+                Ok(RicCall::UnlinkRouteTable),
+            "/ReadRouteTables" | "/api/v1/ReadRouteTables" | "/api/latest/ReadRouteTables" =>
+                Ok(RicCall::ReadRouteTables),
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
@@ -1944,6 +2087,8 @@ async fn main() {
             },
             DirectLinks: json::JsonValue::new_array(),
             Nets: json::JsonValue::new_array(),
+            Subnets: json::JsonValue::new_array(),
+            RouteTables: json::JsonValue::new_array(),
             Volumes: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
             InternetServices: json::JsonValue::new_array(),
