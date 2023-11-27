@@ -184,6 +184,7 @@ enum RicCall {
     ReadPublicIps,
     ReadRouteTables,
     ReadSubnets,
+    ReadAdminPassword,
 
     LinkInternetService,
     UnlinkInternetService,
@@ -664,6 +665,8 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteRoute => {
+                // TODO
+                json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateRoute => {
@@ -1365,13 +1368,29 @@ impl RicCall {
                 json["SecurityGroup"] = sg;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::ReadAdminPassword => {
+                let in_json = require_in_json!(bytes);
+                let vm_id = require_arg!(in_json, "VmId");
+                json["VmId"] = vm_id;
+                json["AdminPassword"] = "w0l0l0".into();
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateVms => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateVms require v4 signature")
                 }
                 let vm_id = format!("i-{:08x}", req_id);
+                let in_json = match json::parse(std::str::from_utf8(&bytes).unwrap()) {
+                    Ok(in_json) => in_json,
+                    Err(_) => {
+                        json::object!{}
+                    }
+                };
+
+                // {"BootOnCreation":true,"DeletionProtection":false,"ImageId":"ami-cd8d714e","KeypairName":"deployer","MaxVmsCount":1,"MinVmsCount":1,"NestedVirtualization":false,"SecurityGroupIds":["sg-ffffff00"],"SubnetId":"subnet-00000008","VmType":"tinav4.c1r1p2"}
+                println!("{:#}", in_json.dump());
                 let vm = json::object!{
-                    VmType: "small",
+                    VmType: optional_arg!(in_json, "VmType", "small"),
                     "VmInitiatedShutdownBehavior": "stop",
                     "State": "running",
                     "StateReason": "",
@@ -1380,7 +1399,7 @@ impl RicCall {
                     "IsSourceDestChecked": true,
                     "KeypairName": "my_craft",
                     "PublicIp": "100.200.60.100",
-                    "ImageId": "ami-00000000",
+                    ImageId: optional_arg!(in_json, "ImageId", "ami-00000000"),
                     "PublicDnsName": "ows-148-253-69-185.eu-west-2.compute.outscale.com",
                     "DeletionProtection": false,
                     "Architecture": "x86_64",
@@ -1572,6 +1591,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateKeypair),
             "/ReadKeypairs" | "/api/v1/ReadKeypairs" | "/api/latest/ReadKeypairs" =>
                 Ok(RicCall::ReadKeypairs),
+            "/ReadAdminPassword" | "/api/v1/ReadAdminPassword" | "/api/latest/ReadAdminPassword" =>
+                Ok(RicCall::ReadAdminPassword),
             "/DeleteKeypair" | "/api/v1/DeleteKeypair" | "/api/latest/DeleteKeypair" =>
                 Ok(RicCall::DeleteKeypair),
             "/ReadAccessKeys" | "/api/v1/ReadAccessKeys" | "/api/latest/ReadAccessKeys" =>
