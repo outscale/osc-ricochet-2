@@ -149,6 +149,7 @@ enum RicCall {
     CreatePublicIp,
     CreateSubnet,
     CreateRouteTable,
+    CreateRoute,
 
     DeleteNet,
     DeleteSubnet,
@@ -163,6 +164,7 @@ enum RicCall {
     DeleteInternetService,
     DeletePublicIp,
     DeleteRouteTable,
+    DeleteRoute,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -659,6 +661,31 @@ impl RicCall {
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
                 json["Net"] = net;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::DeleteRoute => {
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateRoute => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let rt_id = require_arg!(in_json, "RouteTableId");
+                let new_route = json::object!{
+                    DestinationIpRange: require_arg!(in_json, "DestinationIpRange"),
+                    CreationMethod: "CreateRoute",
+                    State: "active"
+                };
+                match get_by_id!("RouteTables", "RouteTableId", rt_id) {
+                    Ok((_, rt_idx)) => {
+                        let rt = &mut main_json[user_id]["RouteTables"][rt_idx];
+                        rt["Routes"].push(new_route).unwrap();
+                        json["RouteTable"] = rt.clone();
+                    },
+                    _ => return bad_argument(req_id, json, "Net not found")
+                }
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateRouteTable => {
@@ -1656,6 +1683,11 @@ impl FromStr for RicCall {
                 Ok(RicCall::UnlinkRouteTable),
             "/ReadRouteTables" | "/api/v1/ReadRouteTables" | "/api/latest/ReadRouteTables" =>
                 Ok(RicCall::ReadRouteTables),
+            "/CreateRoute" | "/api/v1/CreateRoute" | "/api/latest/CreateRoute" =>
+                Ok(RicCall::CreateRoute),
+            "/DeleteRoute" | "/api/v1/DeleteRoute" | "/api/latest/DeleteRoute" =>
+                Ok(RicCall::DeleteRoute),
+
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
