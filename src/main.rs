@@ -187,9 +187,12 @@ enum RicCall {
     ReadAdminPassword,
 
     LinkInternetService,
-    UnlinkInternetService,
     LinkRouteTable,
+    LinkVolume,
+
+    UnlinkInternetService,
     UnlinkRouteTable,
+    UnlinkVolume,
 
     UpdateVm,
 
@@ -985,6 +988,79 @@ impl RicCall {
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::LinkVolume => {
+                let in_json = require_in_json!(bytes);
+
+                let device_name = require_arg!(in_json, "DeviceName");
+                let vm_id = require_arg!(in_json, "VmId");
+                let volume_id = require_arg!(in_json, "VolumeId");
+
+                match get_by_id!("Vms", "VmId", vm_id) {
+                    Ok((_, vm_idx)) => {
+                        match get_by_id!("Volumes", "VolumeId", volume_id) {
+                            Ok((_, vol_idx)) => {
+                                let vol = &mut main_json[user_id]["Volumes"][vol_idx];
+                                println!("link {:#}", vol.dump());
+                                if vol["State"] != "available" && vol["State"] != "creating" {
+                                    return bad_argument(req_id, json, "Volume not available")
+                                }
+                                vol["state"] = "in-use".into();
+                                let vol_bsu = &mut main_json[user_id]["Vms"][vm_idx]["BlockDeviceMappings"];
+                                vol_bsu.push(
+                                    json::object!{
+                                        DeviceName: device_name.clone(),
+                                        Bsu: json::object!{
+                                            VolumeId: volume_id.clone(),
+                                            State: "attached",
+                                            LinkDate: "2022-08-01T13:37:54.356Z",
+                                            DeleteOnVmDeletion: false
+                                        }
+                                    }
+                                ).unwrap();
+                                main_json[user_id]["Volumes"][vol_idx]["LinkedVolumes"] =
+                                    json::array![
+                                        json::object!{
+                                            "VolumeId": volume_id.clone(),
+                                            "DeleteOnVmDeletion": false,
+                                            "DeviceName": device_name.clone(),
+                                            "State": "attached",
+                                            "VmId": vm_id.clone()
+                                        }
+                                    ];
+                            },
+                            _ => return bad_argument(req_id, json, "Volume not found")
+                        }
+                    },
+                    _ => return bad_argument(req_id, json, "VM not found")
+                }
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::UnlinkVolume => {
+                let in_json = require_in_json!(bytes);
+
+                let volume_id = require_arg!(in_json, "VolumeId");
+
+                match get_by_id!("Volumes", "VolumeId", volume_id) {
+                    Ok((_, vol_idx)) => {
+                        let vol = &mut main_json[user_id]["Volumes"][vol_idx];
+                        if vol["state"] != "in-use" {
+                            return bad_argument(req_id, json, "Volume alerady unlink")
+                        }
+                        vol["state"] = "available".into();
+                        let link_vol = &mut vol["LinkedVolumes"];
+                        let vm_id = link_vol[0]["VmId"].to_string();
+                        vol.remove("LinkedVolumes");
+                        if let Ok((_, vm_idx)) = get_by_id!("Vms", "VmId", vm_id) {
+                            let vol_bsu = &mut main_json[user_id]["Vms"][vm_idx]["BlockDeviceMappings"];
+                            array_remove!(vol_bsu, |bsu| bsu["Bsu"] == volume_id);
+
+                        };
+                    },
+                    _ => return bad_argument(req_id, json, "Volume not found")
+                }
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateVolume => {
                 let in_json = require_in_json!(bytes);
 
@@ -1742,6 +1818,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteRouteTable),
             "/LinkRouteTable" | "/api/v1/LinkRouteTable" | "/api/latest/LinkRouteTable" =>
                 Ok(RicCall::LinkRouteTable),
+            "/LinkVolume" | "/api/v1/LinkVolume" | "/api/latest/LinkVolume" =>
+                Ok(RicCall::LinkVolume),
+            "/UnlinkVolume" | "/api/v1/UnlinkVolume" | "/api/latest/UnlinkVolume" =>
+                Ok(RicCall::UnlinkVolume),
             "/UnlinkRouteTable" | "/api/v1/UnlinkRouteTable" | "/api/latest/UnlinkRouteTable" =>
                 Ok(RicCall::UnlinkRouteTable),
             "/ReadRouteTables" | "/api/v1/ReadRouteTables" | "/api/latest/ReadRouteTables" =>
