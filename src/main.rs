@@ -191,6 +191,8 @@ enum RicCall {
     LinkRouteTable,
     UnlinkRouteTable,
 
+    UpdateVm,
+
     // Free Calls
     ReadPublicCatalog,
     ReadRegions,
@@ -321,6 +323,7 @@ impl RicCall {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "ReadVms require v4 signature")
                 }
+
                 let user_vms = &main_json[user_id]["Vms"];
 
                 json["Vms"] = (*user_vms).clone();
@@ -329,6 +332,7 @@ impl RicCall {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
                         Ok(in_json) => {
+                            println!("{:#}", in_json.dump());
                             if in_json.has_key("Filters") {
                                 let filter = &in_json["Filters"];
 
@@ -369,12 +373,13 @@ impl RicCall {
                     match in_json {
                         Ok(in_json) => {
                             // need refacto using user_vms.members().filter(FIND and do json["Vms"].push((*vm)).for_each(REMOVE)
+                            println!("{:#}", in_json.dump());
                             if in_json.has_key("VmIds") {
                                 let ids = &in_json["VmIds"];
 
                                 json["Vms"] = json::JsonValue::new_array();
                                 let mut rm_array = vec![];
-                                for (idx, vm) in user_vms.members().enumerate() {
+                                for (idx, vm) in user_vms.members_mut().enumerate() {
                                     let mut need_rm = true;
 
                                     for id in ids.members() {
@@ -383,6 +388,7 @@ impl RicCall {
                                         }
                                     }
                                     if need_rm {
+                                        vm["State"] = "terminated".into();
                                         json["Vms"].push((*vm).clone()).unwrap();
                                         rm_array.push(idx);
                                     }
@@ -1050,10 +1056,39 @@ impl RicCall {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
                 }
-
-                let user_imgs = &main_json[user_id]["Volumes"];
-
+                let user_imgs = &mut main_json[user_id]["Volumes"];
                 json["Volumes"] = (*user_imgs).clone();
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+
+                            println!("{:#}", in_json.dump());
+                            let filter = &in_json["Filters"];
+
+                            json["Volumes"] = json::JsonValue::new_array();
+
+                            for vol in user_imgs.members() {
+                                let mut need_add = true;
+
+                                need_add = have_request_filter(filter, vol,
+                                                               "VolumeIds",
+                                                               "VolumeId", need_add);
+                                if need_add {
+                                    json["Volumes"].push((*vol).clone()).unwrap();
+                                }
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalid JSON format")
+                        }
+                    }
+                }
+                for vol in user_imgs.members_mut() {
+                    if vol["State"] == "creating" {
+                        vol["State"] = "available".into();
+                    }
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -1373,6 +1408,13 @@ impl RicCall {
                 let vm_id = require_arg!(in_json, "VmId");
                 json["VmId"] = vm_id;
                 json["AdminPassword"] = "w0l0l0".into();
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::UpdateVm => {
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+                let vm_id = require_arg!(in_json, "VmId");
+                json["ricochet-info"] = format!("vm id: {}, but update vm not implemented", vm_id).into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateVms => {
@@ -1706,6 +1748,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadRouteTables),
             "/CreateRoute" | "/api/v1/CreateRoute" | "/api/latest/CreateRoute" =>
                 Ok(RicCall::CreateRoute),
+
+            "/UpdateVm" | "/api/v1/UpdateVm" | "/api/latest/UpdateVm" =>
+                Ok(RicCall::UpdateVm),
+
             "/DeleteRoute" | "/api/v1/DeleteRoute" | "/api/latest/DeleteRoute" =>
                 Ok(RicCall::DeleteRoute),
 
