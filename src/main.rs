@@ -228,13 +228,19 @@ impl RicCall {
                 a["IpRanges"].members().eq(b["IpRanges"].members())
         }
 
-        macro_rules! array_remove {
-            ($array:expr, $predicate:expr) => {{
+        macro_rules! array_remove_2 {
+            ($json:expr, $req_id:expr, $array:expr, $predicate:expr) => {{
                 match $array.members().position($predicate) {
                     Some(idx) => $array.array_remove(idx),
-                    None => return bad_argument(req_id, json, "Element not found(alerady destroy ?)")
+                    None => return bad_argument($req_id, $json, "Element not found(alerady destroy ?)")
                 }
             }}
+        }
+
+        macro_rules! array_remove {
+            ($array:expr, $predicate:expr) => {
+                array_remove_2!(json, req_id, $array, $predicate)
+            }
         }
 
         macro_rules! get_by_id {
@@ -265,13 +271,19 @@ impl RicCall {
             }}
         }
 
-        macro_rules! require_arg {
-            ($in_json:expr, $arg:expr) => {{
+        macro_rules! require_arg_2 {
+            ($json:expr, $req_id:expr, $in_json:expr, $arg:expr) => {{
                 match $in_json.has_key($arg) {
                     true => $in_json[$arg].clone(),
-                    _ => return bad_argument(req_id, json, format!("{} required", $arg).as_str())
+                    _ => return bad_argument($req_id, $json, format!("{} required", $arg).as_str())
                 }
             }}
+        }
+
+        macro_rules! require_arg {
+            ($in_json:expr, $arg:expr) => {
+                require_arg_2!(json, req_id, $in_json, $arg)
+            }
         }
 
         macro_rules! require_in_json {
@@ -1338,16 +1350,31 @@ impl RicCall {
                     _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
                 };
 
-                let new_rule = json::object!{
-                    "FromPortRange": require_arg!(in_json, "FromPortRange"),
-                    "IpProtocol": optional_arg!(in_json, "IpProtocol", "-1"),
-                    "ToPortRange":2222,
-                    "IpRanges":[
-                        "unimplemented"
-                    ]
-                };
-                array_remove!(sg[flow_to_str!(flow)],
-                                 |other_rule| is_same_rule(&new_rule, other_rule));
+                fn rm_rule(json : json::JsonValue, sg: &mut json::JsonValue,
+                           pr : & json::JsonValue, flow: bool, req_id: usize) ->
+                    Result<(String, hyper::StatusCode), (String, hyper::StatusCode)> {
+
+                    let new_rule = json::object!{
+                        "FromPortRange": require_arg_2!(json, req_id, pr, "FromPortRange"),
+                        "IpProtocol": optional_arg!(pr, "IpProtocol", "-1"),
+                        "ToPortRange":2222,
+                        "IpRanges":[
+                            "unimplemented"
+                        ]
+                    };
+                    array_remove_2!(json, req_id, sg[flow_to_str!(flow)],
+                                  |other_rule| is_same_rule(&new_rule, other_rule));
+
+                    Ok(("unused".into(), StatusCode::OK))
+                }
+
+                if in_json.has_key("Rules") {
+                    for r in in_json["Rules"].members() {
+                        rm_rule(json.clone(), sg, r, flow, req_id)?;
+                    }
+                } else {
+                    rm_rule(json.clone(), sg, &in_json, flow, req_id)?;
+                }
                 json["SecurityGroup"] = sg.clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -1411,6 +1438,7 @@ impl RicCall {
                 }
 
                 let in_json = require_in_json!(bytes);
+                println!("CreateSecurityGroupRule: {:#}", in_json.dump());
                 let sg_id = match in_json.has_key("SecurityGroupId") {
                     true => in_json["SecurityGroupId"].clone(),
                     _ => return bad_argument(req_id, json, "SecurityGroupId required")
@@ -1431,21 +1459,34 @@ impl RicCall {
                     },
                     _ => return bad_argument(req_id, json, "Flow required")
                 };
-                let new_rule = json::object!{
-                    "FromPortRange": require_arg!(in_json, "FromPortRange"),
-                    "IpProtocol": optional_arg!(in_json, "IpProtocol", "-1"),
-                    "ToPortRange":2222,
-                    "IpRanges":[
-                        "unimplemented"
-                    ]
-                };
 
-                if sg[flow_to_str!(flow)].members().any(|other_rule| is_same_rule(&new_rule, other_rule)) {
-                    return bad_argument(req_id, json, "rule alerady exist");
+                fn add_rule(json : json::JsonValue, sg: &mut json::JsonValue,
+                            pr : & json::JsonValue, flow: bool, req_id: usize) ->
+                    Result<(String, hyper::StatusCode), (String, hyper::StatusCode)>  {
+                        let new_rule = json::object!{
+                            "FromPortRange": require_arg_2!(json , req_id, pr, "FromPortRange"),
+                            "IpProtocol": optional_arg!(pr, "IpProtocol", "-1"),
+                            "ToPortRange":2222,
+                            "IpRanges":[
+                                "unimplemented"
+                            ]
+                        };
+
+                        if sg[flow_to_str!(flow)].members().any(|other_rule| is_same_rule(&new_rule, other_rule)) {
+                            return bad_argument(req_id, json, "rule alerady exist");
+                        }
+                        // should check that the rule can be an outbound rule
+                        sg[flow_to_str!(flow)].push(new_rule).unwrap();
+                        Ok(("unused".into(), StatusCode::OK))
+                    }
+
+                if in_json.has_key("Rules") {
+                    for r in in_json["Rules"].members() {
+                        add_rule(json.clone(), sg, r, flow, req_id)?;
+                    }
+                } else {
+                    add_rule(json.clone(), sg, &in_json, flow, req_id)?;
                 }
-                // should check that the rule can be an outbound rule
-                sg[flow_to_str!(flow)].push(new_rule).unwrap();
-
                 json["SecurityGroup"] = sg.clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
