@@ -165,6 +165,7 @@ enum RicCall {
     DeletePublicIp,
     DeleteRouteTable,
     DeleteRoute,
+    DeleteVolume,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -189,6 +190,8 @@ enum RicCall {
     LinkInternetService,
     LinkRouteTable,
     LinkVolume,
+    // LinkPublicIp
+    // UnlinkPublicIp
 
     UnlinkInternetService,
     UnlinkRouteTable,
@@ -692,7 +695,7 @@ impl RicCall {
             },
             RicCall::CreateRoute => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                    return eval_bad_auth(req_id, json, "CreateRoute require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
                 let rt_id = require_arg!(in_json, "RouteTableId");
@@ -714,7 +717,7 @@ impl RicCall {
             },
             RicCall::CreateRouteTable => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                    return eval_bad_auth(req_id, json, "CreateRouteTable require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
                 let net_id = require_arg!(in_json, "NetId");
@@ -755,7 +758,7 @@ impl RicCall {
             },
             RicCall::LinkInternetService => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                    return eval_bad_auth(req_id, json, "LinkInternetService require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
                 let id = require_arg!(in_json, "InternetServiceId");
@@ -776,7 +779,7 @@ impl RicCall {
             },
             RicCall::UnlinkInternetService => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                    return eval_bad_auth(req_id, json, "UnlinkInternetService require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
                 let id = require_arg!(in_json, "InternetServiceId");
@@ -797,7 +800,7 @@ impl RicCall {
             },
             RicCall::DeleteInternetService => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                    return eval_bad_auth(req_id, json, "DeleteInternetService require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
                 let user_iwgs = &mut main_json[user_id]["InternetServices"];
@@ -808,7 +811,7 @@ impl RicCall {
             },
             RicCall::DeletePublicIp => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
+                    return eval_bad_auth(req_id, json, "DeletePublicIp require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
                 let user_iwgs = &mut main_json[user_id]["PublicIps"];
@@ -1048,6 +1051,17 @@ impl RicCall {
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::DeleteVolume => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteVolume require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let user_nets = &mut main_json[user_id]["Volumes"];
+                let id = require_arg!(in_json, "VolumeId");
+
+                array_remove!(user_nets, |n| n["VolumeId"] == id);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::UnlinkVolume => {
                 let in_json = require_in_json!(bytes);
 
@@ -1065,7 +1079,7 @@ impl RicCall {
                         vol.remove("LinkedVolumes");
                         if let Ok((_, vm_idx)) = get_by_id!("Vms", "VmId", vm_id) {
                             let vol_bsu = &mut main_json[user_id]["Vms"][vm_idx]["BlockDeviceMappings"];
-                            array_remove!(vol_bsu, |bsu| bsu["Bsu"] == volume_id);
+                            array_remove!(vol_bsu, |bsu| bsu["Bsu"]["VolumeId"] == volume_id);
 
                         };
                     },
@@ -1335,6 +1349,7 @@ impl RicCall {
                 }
 
                 let in_json = require_in_json!(bytes);
+                println!("DeleteSecurityGroupRule: {:#}", in_json.dump());
                 let flow = match require_arg!(in_json, "Flow").as_str() {
                     Some(s) => match s {
                         "Inbound" => true,
@@ -1822,6 +1837,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadVolumes),
             "/CreateVolume" | "/api/v1/CreateVolume" | "/api/latest/CreateVolume" =>
                 Ok(RicCall::CreateVolume),
+            "/DeleteVolume" | "/api/v1/DeleteVolume" | "/api/latest/DeleteVolume" =>
+                Ok(RicCall::DeleteVolume),
             "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
                 Ok(RicCall::ReadLoadBalancers),
             "/ReadApiAccessPolicy" | "/api/v1/ReadApiAccessPolicy" | "/api/latest/ReadApiAccessPolicy" =>
