@@ -1,5 +1,4 @@
-use std::env;
-use std::convert::Infallible;
+use std::{env, convert::Infallible} ;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::string::String;
@@ -30,6 +29,8 @@ use std::ops::Deref;
 
 use std::net::Ipv4Addr;
 use rand::{thread_rng, Rng};
+
+use std::iter::zip;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -1637,7 +1638,9 @@ impl RicCall {
                     require_arg!(t, "Value");
                 }
 
+                let mut ids = Vec::new();
                 let resources_todo = in_json["ResourceIds"].members().map(|id| {
+                    ids.push(id.clone());
                     match id.as_str() {
                         Some(id) => match id.split_once('-') {
                             Some((t, _)) => match t {
@@ -1659,12 +1662,25 @@ impl RicCall {
                     Ok(ok) => ok,
                     Err(e) => return e
                 };
-                for (resource_t, idx) in resources_todo.iter() {
+                let user_main_json = &mut main_json[user_id];
+
+                for (resource_t_idx, id) in zip(resources_todo, ids) {
+                    let (resource_t, idx) = resource_t_idx;
                     for tag in tags.members() {
-                        let j = &mut main_json[user_id][*resource_t][*idx]["Tags"];
+                        let mut ntag = (*tag).clone();
+
+                        ntag["ResourceId"] = id.clone();
+                        ntag["ResourceType"] = resource_t.to_string().into();
+
                         match *self {
-                            RicCall::CreateTags => j.push((*tag).clone()).unwrap(),
-                            RicCall::DeleteTags => {array_remove!(j, |ot| tag.eq(ot));},
+                            RicCall::CreateTags => {
+                                user_main_json["Tags"].push(ntag).unwrap();
+                                user_main_json[resource_t][idx]["Tags"].push((*tag).clone()).unwrap();
+                            },
+                            RicCall::DeleteTags => {
+                                array_remove!(user_main_json["Tags"], |ot| ntag.eq(ot));
+                                array_remove!(user_main_json[resource_t][idx]["Tags"], |ot| tag.eq(ot));
+                            },
                             _ => todo!()
                         };
                     }
@@ -2327,6 +2343,7 @@ async fn main() {
             Subnets: json::JsonValue::new_array(),
             RouteTables: json::JsonValue::new_array(),
             Volumes: json::JsonValue::new_array(),
+            Tags: json::JsonValue::new_array(),
             Keypairs: json::JsonValue::new_array(),
             InternetServices: json::JsonValue::new_array(),
             PublicIps: json::JsonValue::new_array(),
