@@ -187,6 +187,7 @@ enum RicCall {
     ReadRouteTables,
     ReadSubnets,
     ReadAdminPassword,
+    ReadTags,
 
     LinkInternetService,
     LinkRouteTable,
@@ -199,6 +200,8 @@ enum RicCall {
     UnlinkVolume,
 
     UpdateVm,
+
+    StopVms,
 
     // Free Calls
     ReadPublicCatalog,
@@ -377,6 +380,31 @@ impl RicCall {
                         }
                     }
                 }
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::StopVms => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteVms require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let ids = require_arg!(in_json, "VmIds");
+                let user_vms = &mut main_json[user_id]["Vms"];
+                let mut vms_ret = json::JsonValue::new_array();
+
+                for (_, vm) in user_vms.members_mut().enumerate() {
+                    for id in ids.members() {
+                        if *id == vm["VmId"] {
+                            vms_ret.push(json::object!{
+                                "VmId": id.to_string(),
+                                "PreviousState": vm["State"].clone(),
+                                "CurrentState": "stopped"
+                            }).unwrap();
+                            vm["State"] = "stopped".into();
+                        }
+                    }
+                }
+
+                json["Vms"] = vms_ret;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteVms  => {
@@ -1155,6 +1183,17 @@ impl RicCall {
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::ReadTags  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadTags require v4 signature")
+                }
+
+                let user_imgs = &main_json[user_id]["Tags"];
+
+                json["Tags"] = (*user_imgs).clone();
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::ReadVolumes  => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
@@ -1815,6 +1854,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeletePublicIp),
             "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
                 Ok(RicCall::DeleteVms),
+            "/StopVms" | "/api/v1/StopVms" | "/api/latest/StopVms" =>
+                Ok(RicCall::StopVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
                 Ok(RicCall::DeleteLoadBalancer),
             "/DeleteDirectLink" | "/api/v1/DeleteDirectLink" | "/api/latest/DeleteDirectLink" =>
@@ -1833,6 +1874,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadConsumptionAccount),
             "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" =>
                 Ok(RicCall::CreateTags),
+            "/ReadTags" | "/api/v1/ReadTags" | "/api/latest/ReadTags" =>
+                Ok(RicCall::ReadTags),
             "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" =>
                 Ok(RicCall::CreateFlexibleGpu),
             "/DeleteFlexibleGpu" | "/api/v1/DeleteFlexibleGpu" | "/api/latest/DeleteFlexibleGpu" =>
