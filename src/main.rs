@@ -192,13 +192,12 @@ enum RicCall {
     LinkInternetService,
     LinkRouteTable,
     LinkVolume,
-    // LinkPublicIp
-    // UnlinkPublicIp
+    LinkPublicIp,
 
     UnlinkInternetService,
     UnlinkRouteTable,
     UnlinkVolume,
-
+    UnlinkPublicIp,
     UpdateVm,
 
     StopVms,
@@ -1843,6 +1842,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::LinkInternetService),
             "/UnlinkInternetService" | "/api/v1/UnlinkInternetService" | "/api/latest/UnlinkInternetService" =>
                 Ok(RicCall::UnlinkInternetService),
+            "/LinkPublicIp" | "/api/v1/LinkPublicIp" | "/api/latest/LinkPublicIp" =>
+                Ok(RicCall::LinkPublicIp),
+            "/UnlinkPublicIp" | "/api/v1/UnlinkPublicIp" | "/api/latest/UnlinkPublicIp" =>
+                Ok(RicCall::UnlinkPublicIp),
 
             "/CreatePublicIp" | "/api/v1/CreatePublicIp" | "/api/latest/CreatePublicIp" =>
                 Ok(RicCall::CreatePublicIp),
@@ -2382,6 +2385,7 @@ async fn main() {
                 }
             },
             DirectLinks: json::JsonValue::new_array(),
+            Nics: json::JsonValue::new_array(),
             Nets: json::JsonValue::new_array(),
             Subnets: json::JsonValue::new_array(),
             RouteTables: json::JsonValue::new_array(),
