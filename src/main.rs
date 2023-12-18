@@ -805,6 +805,51 @@ impl RicCall {
                 };
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::LinkPublicIp => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "LinkPublicIp require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let id = require_arg!(in_json, "PublicIpId");
+                let user_iwgs = &mut main_json[user_id]["PublicIps"];
+                match user_iwgs.members_mut().find(|iwg| id == iwg["PublicIpId"]) {
+                    Some(iwg) => iwg,
+                    _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
+                };
+
+                /*
+                let nic_id = require_arg!(in_json, "NicId");
+                let nic_idx = get_by_id!("Nics", "NicId", nic_id);
+                match nic_idx {
+                    Ok(_) => {iwg["NicId"] = nic_id},
+                    _ => return bad_argument(req_id, json, "Net not found")
+            };
+                */
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::UnlinkPublicIp => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "UnlinkPublicIp require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let id = require_arg!(in_json, "PublicIpId");
+
+                let user_iwgs = &mut main_json[user_id]["PublicIps"];
+                match user_iwgs.members_mut().find(|iwg| id == iwg["PublicIpId"]) {
+                    Some(iwg) => iwg,
+                    _ => return bad_argument(req_id, json, "PublicIpId doesn't corespond to an existing id")
+                };
+
+                /*
+                let net_id = require_arg!(in_json, "NicId");
+                let net_idx = get_by_id!("Nics", "NicId", net_id);
+                match net_idx {
+                Ok(_) => {iwg.remove("NicId")},
+                _ => return bad_argument(req_id, json, "Nic not found")
+                 };
+                 */
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::UnlinkInternetService => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "UnlinkInternetService require v4 signature")
