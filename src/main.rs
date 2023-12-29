@@ -832,19 +832,33 @@ impl RicCall {
                         None => return bad_argument(req_id, json.clone(), "Element id not found")
                     };
                     // Link here
-                    to_push["VmId"] = vm_id;
-                    user["PublicIps"][ip_idx]["VmId"] = ip_id;
+                    to_push["VmId"] = vm_id.clone();
+                    user["PublicIps"][ip_idx]["VmId"] = vm_id;
                     user["Vms"][vm_idx]["PublicIp"] = user["PublicIps"][ip_idx]["PublicIp"].clone();
                 }
 
                 /*
+                link to nic still TODO, the below code,
+                might be broken, but I let it here,
+                so it can still help for futur implementation
+
+                ******
                 let nic_id = require_arg!(in_json, "NicId");
                 let nic_idx = get_by_id!("Nics", "NicId", nic_id);
                 match nic_idx {
-                    Ok(_) => {iwg["NicId"] = nic_id},
-                    _ => return bad_argument(req_id, json, "Net not found")
-            };
+                Ok(_) => {iwg["NicId"] = nic_id},
+                _ => return bad_argument(req_id, json, "Net not found")
+                };
                  */
+                /*
+                {
+                "ResponseContext":{
+                "RequestId":"6dbd1e94-9512-4814-84f4-27945b68e491"
+                 },
+                 "LinkPublicIpId":"eipassoc-96ae55cd"
+                 }
+
+                */
                 user["LinkPublicIps"].push(to_push).unwrap();
                 json["LinkPublicIpId"] = ip.clone().into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
@@ -854,6 +868,7 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "UnlinkPublicIp require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
                 let id = require_arg!(in_json, "PublicIpId");
 
                 let user_iwgs = &mut main_json[user_id]["PublicIps"];
