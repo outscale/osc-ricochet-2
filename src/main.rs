@@ -251,7 +251,7 @@ impl RicCall {
 
         macro_rules! get_by_id {
             ($resource_type:expr, $id_name:expr, $id:expr) => {{
-                match main_json[user_id][$resource_type].members_mut().position(|m| m[$id_name] == $id) {
+                match main_json[user_id][$resource_type].members().position(|m| m[$id_name] == $id) {
                     Some(idx) => Ok(($resource_type, idx)),
                     None => Err(bad_argument(req_id, json.clone(), "Element id not found"))
                 }
@@ -810,12 +810,32 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "LinkPublicIp require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
-                let id = require_arg!(in_json, "PublicIpId");
-                let user_iwgs = &mut main_json[user_id]["PublicIps"];
-                match user_iwgs.members_mut().find(|iwg| id == iwg["PublicIpId"]) {
-                    Some(iwg) => iwg,
+
+                println!("{:#}", in_json.dump());
+
+                let ip = format!("eipassoc-{:08x}", req_id);
+                let ip_id = require_arg!(in_json, "PublicIpId");
+                let user = &mut main_json[user_id];
+                let ip_idx = match user["PublicIps"].members().position(|iwg| ip_id == iwg["PublicIpId"]) {
+                    Some(idx) => idx,
                     _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
                 };
+                let mut to_push = json::object!{
+                    LinkPublicIpId: ip.clone(),
+                    PublicIpId: ip_id.clone()
+                };
+
+                if in_json.has_key("VmId") {
+                    let vm_id = in_json["VmId"].clone();
+                    let vm_idx =  match user["Vms"].members().position(|m| m["VmId"] == vm_id) {
+                        Some(idx) => idx,
+                        None => return bad_argument(req_id, json.clone(), "Element id not found")
+                    };
+                    // Link here
+                    to_push["VmId"] = vm_id;
+                    user["PublicIps"][ip_idx]["VmId"] = ip_id;
+                    user["Vms"][vm_idx]["PublicIp"] = user["PublicIps"][ip_idx]["PublicIp"].clone();
+                }
 
                 /*
                 let nic_id = require_arg!(in_json, "NicId");
@@ -824,7 +844,9 @@ impl RicCall {
                     Ok(_) => {iwg["NicId"] = nic_id},
                     _ => return bad_argument(req_id, json, "Net not found")
             };
-                */
+                 */
+                user["LinkPublicIps"].push(to_push).unwrap();
+                json["LinkPublicIpId"] = ip.clone().into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkPublicIp => {
@@ -2439,6 +2461,7 @@ async fn main() {
             Keypairs: json::JsonValue::new_array(),
             InternetServices: json::JsonValue::new_array(),
             PublicIps: json::JsonValue::new_array(),
+            LinkPublicIps: json::JsonValue::new_array()
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
