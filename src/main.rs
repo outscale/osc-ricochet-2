@@ -184,6 +184,7 @@ enum RicCall {
     ReadSecurityGroups,
     ReadApiAccessPolicy,
     ReadInternetServices,
+    ReadLinkPublicIps,
     ReadPublicIps,
     ReadRouteTables,
     ReadSubnets,
@@ -1265,6 +1266,17 @@ impl RicCall {
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+            RicCall::ReadLinkPublicIps  => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadLinkPublicIps require v4 signature")
+                }
+
+                let user_imgs = &main_json[user_id]["LinkPublicIps"];
+
+                json["LinkPublicIps"] = (*user_imgs).clone();
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::ReadTags  => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "ReadTags require v4 signature")
@@ -2004,6 +2016,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadInternetServices),
             "/ReadPublicIps" | "/api/v1/ReadPublicIps" | "/api/latest/ReadPublicIps" =>
                 Ok(RicCall::ReadPublicIps),
+            "/ReadLinkPublicIps" | "/api/v1/ReadLinkPublicIps" | "/api/latest/ReadLinkPublicIps" =>
+                Ok(RicCall::ReadLinkPublicIps),
             "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
                 Ok(RicCall::CreateNet),
             "/DeleteNet" | "/api/v1/DeleteNet" | "/api/latest/DeleteNet" =>
