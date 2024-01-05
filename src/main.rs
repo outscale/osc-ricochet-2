@@ -833,34 +833,15 @@ impl RicCall {
                         Some(idx) => idx,
                         None => return bad_argument(req_id, json.clone(), "Element id not found")
                     };
-                    // Link here
                     to_push["VmId"] = vm_id.clone();
                     user["PublicIps"][ip_idx]["VmId"] = vm_id;
+                    user["PublicIps"][ip_idx]["LinkPublicIpId"] = ip.clone().into();
                     user["Vms"][vm_idx]["PublicIp"] = user["PublicIps"][ip_idx]["PublicIp"].clone();
                 }
 
                 /*
-                link to nic still TODO, the below code,
-                might be broken, but I let it here,
-                so it can still help for futur implementation
-
-                ******
-                let nic_id = require_arg!(in_json, "NicId");
-                let nic_idx = get_by_id!("Nics", "NicId", nic_id);
-                match nic_idx {
-                Ok(_) => {iwg["NicId"] = nic_id},
-                _ => return bad_argument(req_id, json, "Net not found")
-                };
+                 * link to nic still TODO
                  */
-                /*
-                {
-                "ResponseContext":{
-                "RequestId":"6dbd1e94-9512-4814-84f4-27945b68e491"
-                 },
-                 "LinkPublicIpId":"eipassoc-96ae55cd"
-                 }
-
-                */
                 user["LinkPublicIps"].push(to_push).unwrap();
                 json["LinkPublicIpId"] = ip.clone().into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
@@ -871,22 +852,37 @@ impl RicCall {
                 }
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
-                let id = require_arg!(in_json, "PublicIpId");
+                if in_json.has_key("PublicIpId") {
+                    let id = require_arg!(in_json, "PublicIpId");
 
-                let user_iwgs = &mut main_json[user_id]["PublicIps"];
-                match user_iwgs.members_mut().find(|iwg| id == iwg["PublicIpId"]) {
-                    Some(iwg) => iwg,
-                    _ => return bad_argument(req_id, json, "PublicIpId doesn't corespond to an existing id")
-                };
+                    let user_iwgs = &mut main_json[user_id]["PublicIps"];
+                    match user_iwgs.members_mut().find(|iwg| id == iwg["PublicIpId"]) {
+                        Some(iwg) => iwg,
+                        _ => return bad_argument(req_id, json, "PublicIpId doesn't corespond to an existing id")
+                    };
+                    return bad_argument(req_id, json, "Sorry but UnlinkPublicIp with PublicIpId not yet supported")
+                } else {
+                    let id = require_arg!(in_json, "LinkPublicIpId");
+                    let user = &mut main_json[user_id];
 
-                /*
-                let net_id = require_arg!(in_json, "NicId");
-                let net_idx = get_by_id!("Nics", "NicId", net_id);
-                match net_idx {
-                Ok(_) => {iwg.remove("NicId")},
-                _ => return bad_argument(req_id, json, "Nic not found")
-                 };
-                 */
+                    let link_idx = match user["LinkPublicIps"].members().position(|iwg| id == iwg["LinkPublicIpId"]) {
+                        Some(iwg) => iwg,
+                        _ => return bad_argument(req_id, json, "UnlinkPublicIpId doesn't corespond to an existing id")
+                    };
+                    let ip_id = user["LinkPublicIps"][link_idx]["PublicIpId"].clone();
+                    let vm_id = user["LinkPublicIps"][link_idx]["VmIp"].clone();
+                    if let Some(vm_idx) = user["Vms"].members().position(|vm| vm_id == vm["VmId"] ) {
+                        let mut rng = thread_rng();
+                        user["Vms"][vm_idx]["PublicIp"] = Ipv4Addr::from(rng.gen_range(0..std::u32::MAX)).to_string().into();
+                    }
+
+                    if let Some(ip_idx) = user["PublicIps"].members().position(|pip| ip_id == pip["PublicIpId"] ) {
+                        user["PublicIps"][ip_idx].remove("VmId");
+                        user["PublicIps"][ip_idx].remove("LinkPublicIpId");
+                    }
+                    user["LinkPublicIps"].array_remove(link_idx);
+                }
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkInternetService => {
@@ -926,6 +922,7 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "DeletePublicIp require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
                 let user_iwgs = &mut main_json[user_id]["PublicIps"];
                 // TODO: check net is destroyable
                 let id = require_arg!(in_json, "PublicIpId");
