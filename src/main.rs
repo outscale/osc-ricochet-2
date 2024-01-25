@@ -705,7 +705,7 @@ impl RicCall {
                             if range.prefix_len() != 16 && range.prefix_len() != 28 {
                                 return bad_argument(req_id, json, "iprange size is nope")
                             }
-                            net["IpRange"] = iprange.clone().into()
+                            net["IpRange"] = iprange.into()
                         },
                         _ => return bad_argument(req_id, json,
                                                  "you range is pure &@*$ i meam invalide")
@@ -2322,13 +2322,13 @@ async fn handler(req: Request<Body>,
 
     let to_call = match cfg["in_convertion"] == true {
         true => {
-            println!("path: {}", uri.path().clone());
+            println!("path: {}", uri.path());
             let ret = match uri.path() {
                 "/" | "/icu/" | "directlinks" | "fcu" => {
 
                     let mut in_args = json::JsonValue::new_object();
                     let args_str = std::str::from_utf8(&bytes).unwrap();
-                    let mut path = uri.path().clone();
+                    let mut path = uri.path();
 
                     let in_json = json::parse(args_str);
                     if (in_json.is_ok() && in_json.unwrap().has_key("Action")) || path.contains("icu") {
