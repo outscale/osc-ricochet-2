@@ -70,7 +70,7 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
                 // Game on
                 if needle_c == Some('*') {
                     // if * at the end, then everything goes, return true
-                    if needle_c.is_none() {
+                    if s_needle == "*" {
                         return true;
                     }
                     s_needle = neddle_chars.as_str();
