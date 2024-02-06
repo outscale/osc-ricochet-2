@@ -46,11 +46,62 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
     if !old {
         return false;
     }
+    fn comp_filter(elem: &json::JsonValue, needle: & json::JsonValue) -> bool {
+        if elem == needle {
+            return true;
+        }
+        if elem.is_string() && needle.is_string() {
+            let mut s_elem = elem.as_str().unwrap();
+            let mut s_needle = needle.as_str().unwrap();
+
+            let mut neddle_chars = s_needle.chars();
+            let mut elem_chars = s_elem.chars();
+
+            loop {
+                let elem_c = elem_chars.next();
+                let needle_c = neddle_chars.next();
+
+                if elem_c.is_none() || needle_c.is_none() {
+                    return (elem_c.is_none() && needle_c.is_none()) || s_needle == "*"
+                }
+                if needle_c == elem_c {
+                    continue;
+                }
+                // Game on
+                if needle_c == Some('*') {
+                    // if * at the end, then everything goes, return true
+                    if needle_c.is_none() {
+                        return true;
+                    }
+                    s_needle = neddle_chars.as_str();
+                    // if there is something after *, headache incoming
+                    if let Some(star_pos) = s_needle.find('*') {
+                        let (to_search, then) = s_needle.split_at(star_pos);
+                        if let Some((_, then_el)) = s_elem.split_once(to_search) {
+                            s_elem = then_el;
+                            s_needle = then;
+                            elem_chars = then_el.chars();
+                            neddle_chars = s_needle.chars();
+                        } else {
+                            return false;
+                        }
+                        continue;
+                    } else {
+                        // if s_needle is at at elem_chars end, return true, otherwise return false
+                        let test = s_elem.strip_suffix(s_needle);
+                        return test.is_some();
+                    }
+                }
+                return false;
+            }
+        }
+        false
+    }
 
     if filter.has_key(lookfor) {
 
         for l in filter[lookfor].members() {
-            if vm.has_key(src) && vm[src] == *l {
+            if vm.has_key(src) && comp_filter(&vm[src], l) {
                 return true;
             }
         }
@@ -1078,15 +1129,33 @@ impl RicCall {
                         },
                         Ok(in_json) => {
                             if in_json.has_key("Filters") {
-                                let _filters = in_json["Filters"].clone();
-                                if !_filters.is_object() {
+                                let filters = &in_json["Filters"];
+                                if !filters.is_object() {
                                     return bad_argument(req_id, json, "Filter must be an object :p")
                                 }
+                                json["Images"] = json::array!{};
+                                for img in user_imgs.members() {
+                                    let mut need_add = true;
+
+                                    need_add = have_request_filter(filters, img,
+                                                                   "ImageNames",
+                                                                   "ImageName", need_add);
+
+                                    need_add = have_request_filter(filters, img,
+                                                                   "AccountAliases",
+                                                                   "AccountAlias", need_add);
+                                    if need_add {
+                                        json["Images"].push((*img).clone()).unwrap();
+                                    }
+                                }
+                            } else {
+                                json["Images"] = (*user_imgs).clone();
                             }
                         }
                     }
+                } else {
+                    json["Images"] = (*user_imgs).clone();
                 }
-                json["Images"] = (*user_imgs).clone();
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -2465,8 +2534,15 @@ async fn main() {
         connection.push(json::object!{
             Vms: json::JsonValue::new_array(),
             FlexibleGpus: json::JsonValue::new_array(),
-            LoadBalancers: json::JsonValue::new_array(),
-            Images: json::JsonValue::new_array(),
+            LoadBalancers: json::array!{},
+            Images: json::array!{
+                json::object!{
+                    AccountId: format!("{:08x}", 0xffffff),
+                    ImageId: format!("{:08x}", 0xffffff00u32),
+                    AccountAlias:"Outscale",
+                    ImageName: "Fill More is for Penguin General"
+                }
+            },
             SecurityGroups: json::array!{
                 json::object!{
                     Tags: json::array!{},
