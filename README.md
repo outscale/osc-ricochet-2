@@ -16,9 +16,11 @@ if you want Ricochet to Rise and Shine, you need to have the right conf in the r
 Example:
 ```json
 {
-    "auth_type": "headarches", // either exist, headache or none, none ignore all auth, exist, check if the user exist but don't go futher, and headache do the full auth
-    "tls": false, // currently broken if true
-    "in_convertion": true, // support for FCU/ICU and other non outscale API
+     // either exist, headache or none, none ignore all auth, exist, check if the user exist but don't go futher,
+     // and headache do the full auth, headache is buggy
+    "auth_type": "headarches",
+    "tls": false, // start the server as an https server
+    "in_convertion": true, // support for FCU/ICU and other non outscale API (just support a very few call so far)
     "password_as_ak": true, // password auth, is now consider as strong as ak/sk
     "users": [ // can have multy users
 	{
