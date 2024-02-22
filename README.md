@@ -17,12 +17,12 @@ Example:
 ```json
 {
      // either exist, headache or none, none ignore all auth, exist, check if the user exist but don't go futher,
-     // and headache do the full auth, headache is buggy
+     // and headarches do the full auth, headarches is buggy
     "auth_type": "headarches",
-    "tls": false, // start the server as an https server
+    "tls": false, // start the server as an http/https server
     "in_convertion": true, // support for FCU/ICU and other non outscale API (just support a very few call so far)
     "password_as_ak": true, // password auth, is now consider as strong as ak/sk
-    "users": [ // can have multy users
+    "users": [ // Can have multiple users
 	{
 	    "access_key": "11112211111110000000",
 	    "secret_key": "0000001111112222223333334444445555555666",
