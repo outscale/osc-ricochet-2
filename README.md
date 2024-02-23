@@ -75,7 +75,7 @@ for config see [this](./ricochet-headarches.json) and [that](./ricochet.json) as
 (ReadVms)      ->    [ricochet-2]
                          |
                          V
- [curl]     <- (Send earlier create VM)
+ [curl]     <- (Send earlier created VM)
     |
     V
 (print result)
