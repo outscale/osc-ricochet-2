@@ -246,6 +246,7 @@ enum RicCall {
     LinkRouteTable,
     LinkVolume,
     LinkPublicIp,
+    LinkFlexibleGpu,
 
     UnlinkInternetService,
     UnlinkRouteTable,
@@ -823,6 +824,14 @@ impl RicCall {
                 main_json[user_id]["RouteTables"].push(
                     rt.clone()).unwrap();
                 json["RouteTable"] = rt;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::LinkFlexibleGpu => {
+                /* Still todo */
+                json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
+                let in_json = require_in_json!(bytes);
+                json["FlexibleGpuId"] = require_arg!(in_json, "FlexibleGpuId");
+                json["VmId"] = require_arg!(in_json, "VmId");
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkRouteTable => {
@@ -2012,6 +2021,9 @@ impl FromStr for RicCall {
                 Ok(RicCall::LinkPublicIp),
             "/UnlinkPublicIp" | "/api/v1/UnlinkPublicIp" | "/api/latest/UnlinkPublicIp" =>
                 Ok(RicCall::UnlinkPublicIp),
+
+            "/LinkFlexibleGpu" | "/api/v1/LinkFlexibleGpu" | "/api/latest/LinkFlexibleGpu" =>
+                Ok(RicCall::LinkFlexibleGpu),
 
             "/CreatePublicIp" | "/api/v1/CreatePublicIp" | "/api/latest/CreatePublicIp" =>
                 Ok(RicCall::CreatePublicIp),
