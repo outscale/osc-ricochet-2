@@ -2538,7 +2538,7 @@ async fn main() {
             Images: json::array!{
                 json::object!{
                     AccountId: format!("{:08x}", 0xffffff),
-                    ImageId: format!("{:08x}", 0xffffff00u32),
+                    ImageId: format!("ami-{:08x}", 0xffffff00u32),
                     AccountAlias:"Outscale",
                     ImageName: "Fill More is for Penguin General"
                 }
