@@ -1944,20 +1944,25 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
                 }
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
+                let in_json = require_in_json!(bytes);
+                let model_name = require_arg!(in_json, "ModelName");
+                let subregion_name = require_arg!(in_json, "SubregionName");
+                let generation = optional_arg!(in_json, "Generation", "v3");
+                let delete_on_vmd_eletion = optional_arg!(in_json, "DeleteOnVmDeletion", false);
+
                 let fgpu_json = json::object!{
-                    DeleteOnVmDeletion: false,
+                    DeleteOnVmDeletion: delete_on_vmd_eletion,
                     FlexibleGpuId: format!("fgpu-{:08x}", req_id),
-                    Generation: "Wololo",
-                    ModelName: "XOXO",
+                    Generation: generation,
+                    ModelName: model_name,
                     Tags: json::array!{},
-                    State: "imaginary",
-                    SubregionName: "mud-half-3a",
-                    VmId: "unlink"
+                    State: "allocated",
+                    SubregionName: subregion_name,
                 };
 
 
                 println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
-                json["FlexibleGpu"] = json::array!{fgpu_json.clone()};
+                json["FlexibleGpu"] = fgpu_json.clone();
                 user_fgpu.push(fgpu_json).unwrap();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
