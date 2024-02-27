@@ -830,8 +830,20 @@ impl RicCall {
                 /* Still todo */
                 json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
                 let in_json = require_in_json!(bytes);
-                json["FlexibleGpuId"] = require_arg!(in_json, "FlexibleGpuId");
-                json["VmId"] = require_arg!(in_json, "VmId");
+                let fgpu_id = require_arg!(in_json, "FlexibleGpuId");
+                let vm_id = require_arg!(in_json, "VmId");
+
+                let fgpu_idx = match get_by_id!("FlexibleGpus", "FlexibleGpuId", fgpu_id) {
+                    Ok((_, idx)) => idx,
+                    _ => return bad_argument(req_id, json, "FlexibleGpu not found")
+                };
+                match get_by_id!("Vms", "VmId", vm_id) {
+                    Ok((_, _)) => {
+                        main_json[user_id]["FlexibleGpus"][fgpu_idx]["VmId"] = vm_id
+                    },
+                    _ => return bad_argument(req_id, json, "Vm not found")
+                }
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkRouteTable => {
