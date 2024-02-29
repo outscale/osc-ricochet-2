@@ -1149,30 +1149,70 @@ impl RicCall {
             },
             RicCall::ReadRegions  => {
 
+                let region_name = match cfg.has_key("region") {
+                    true => cfg["region"]["name"].as_str().unwrap(),
+                    _ => "mud-half-3"
+                };
+
                 json["Regions"] = json::array![
                     json::object!{
                         Endpoint: "127.0.0.1:3000",
-                        RegionName: "mud-half-3"
+                        RegionName: region_name
                     }
                 ];
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadSubregions  => {
-                json["Subregions"] = json::array![
-                    json::object!{
-                        State: "available",
-                        RegionName: "mud-half-3",
-                        SubregionName: "mud-half-3a",
-                        LocationCode: "PAR1"
+                json["Subregions"] = json::array![];
+                match cfg.has_key("region") {
+                    true => {
+                        let region = & cfg["region"];
+                        let region_name = region["name"].as_str().unwrap();
+                        match region.has_key("subregions") {
+                            true => {
+                                for sub in region["subregions"].members() {
+                                    json["Subregions"].push(json::object!{
+                                        State: "available",
+                                        RegionName: region_name,
+                                        SubregionName: format!("{}{}", region_name, sub),
+                                        LocationCode: "PAR1"
+                                    }).unwrap();
+                                }
+                            },
+                            _ => {
+                                json["Subregions"].push(json::object!{
+                                    State: "available",
+                                    RegionName: region_name,
+                                    SubregionName: format!("{}a", region_name),
+                                    LocationCode: "PAR1"
+                                }).unwrap();
+                                json["Subregions"].push(json::object!{
+                                    State: "available",
+                                    RegionName: region_name,
+                                    SubregionName: format!("{}b", region_name),
+                                    LocationCode: "PAR1"
+                                }).unwrap();
+
+                            }
+                        }
                     },
-                    json::object!{
-                        State: "available",
-                        RegionName: "mud-half-3",
-                        SubregionName: "mud-half-3b",
-                        LocationCode: "PAR1"
+                    _ => {
+                        json["Subregions"].push(json::object!{
+                            State: "available",
+                            RegionName: "mud-half-3",
+                            SubregionName: "mud-half-3a",
+                            LocationCode: "PAR1"
+                        }).unwrap();
+                        json["Subregions"].push(json::object!{
+                            State: "available",
+                            RegionName: "mud-half-3",
+                            SubregionName: "mud-half-3b",
+                            LocationCode: "PAR1"
+                        }).unwrap();
                     }
-                ];
+                };
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadAccounts  => {
