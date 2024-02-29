@@ -248,12 +248,15 @@ enum RicCall {
     LinkPublicIp,
     LinkFlexibleGpu,
 
+    UnlinkFlexibleGpu,
     UnlinkInternetService,
     UnlinkRouteTable,
     UnlinkVolume,
     UnlinkPublicIp,
+
     UpdateVm,
 
+    StartVms,
     StopVms,
 
     // Free Calls
@@ -399,7 +402,15 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "ReadVms require v4 signature")
                 }
 
-                let user_vms = &main_json[user_id]["Vms"];
+                let user_vms = &mut main_json[user_id]["Vms"];
+
+                for vm in user_vms.members_mut() {
+                    if vm["State"] == "pending" {
+                        vm["State"] = "running".into()
+                    } else if vm["State"] == "stopping" {
+                        vm["State"] = "stopped".into()
+                    }
+                }
 
                 json["Vms"] = (*user_vms).clone();
 
@@ -437,7 +448,7 @@ impl RicCall {
             },
             RicCall::StopVms => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteVms require v4 signature")
+                    return eval_bad_auth(req_id, json, "StopVms require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
                 let ids = require_arg!(in_json, "VmIds");
@@ -447,12 +458,45 @@ impl RicCall {
                 for (_, vm) in user_vms.members_mut().enumerate() {
                     for id in ids.members() {
                         if *id == vm["VmId"] {
+                            let mut new_state = "stopping";
+                            if vm["State"] == "stopped" {
+                                new_state = "stopped"
+                            }
                             vms_ret.push(json::object!{
                                 "VmId": id.to_string(),
                                 "PreviousState": vm["State"].clone(),
-                                "CurrentState": "stopped"
+                                "CurrentState": new_state
                             }).unwrap();
-                            vm["State"] = "stopped".into();
+                            vm["State"] = new_state.into();
+                        }
+                    }
+                }
+
+                json["Vms"] = vms_ret;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::StartVms => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "StartVms require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let ids = require_arg!(in_json, "VmIds");
+                let user_vms = &mut main_json[user_id]["Vms"];
+                let mut vms_ret = json::JsonValue::new_array();
+
+                for (_, vm) in user_vms.members_mut().enumerate() {
+                    for id in ids.members() {
+                        if *id == vm["VmId"] {
+                            let mut new_state = "pending";
+                            if vm["State"] == "running" {
+                                new_state = "running"
+                            }
+                            vms_ret.push(json::object!{
+                                "VmId": id.to_string(),
+                                "PreviousState": vm["State"].clone(),
+                                "CurrentState": new_state
+                            }).unwrap();
+                            vm["State"] = new_state.into();
                         }
                     }
                 }
@@ -827,8 +871,6 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkFlexibleGpu => {
-                /* Still todo */
-                json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
                 let in_json = require_in_json!(bytes);
                 let fgpu_id = require_arg!(in_json, "FlexibleGpuId");
                 let vm_id = require_arg!(in_json, "VmId");
@@ -839,10 +881,25 @@ impl RicCall {
                 };
                 match get_by_id!("Vms", "VmId", vm_id) {
                     Ok((_, _)) => {
-                        main_json[user_id]["FlexibleGpus"][fgpu_idx]["VmId"] = vm_id
+                        main_json[user_id]["FlexibleGpus"][fgpu_idx]["VmId"] = vm_id;
+                        main_json[user_id]["FlexibleGpus"][fgpu_idx]["State"] = "attaching".into()
                     },
                     _ => return bad_argument(req_id, json, "Vm not found")
                 }
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::UnlinkFlexibleGpu => {
+                let in_json = require_in_json!(bytes);
+                let fgpu_id = require_arg!(in_json, "FlexibleGpuId");
+
+                match get_by_id!("FlexibleGpus", "FlexibleGpuId", fgpu_id) {
+                    Ok((_, idx)) => {
+                        main_json[user_id]["FlexibleGpus"][idx].remove("VmId");
+                        main_json[user_id]["FlexibleGpus"][idx]["State"] = "detaching".into()
+                    },
+                    _ => return bad_argument(req_id, json, "FlexibleGpu not found")
+                };
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -1443,8 +1500,15 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "ReadFlexibleGpus require v4 signature")
                 }
 
-                let user_fgpus = &main_json[user_id]["FlexibleGpus"];
+                let user_fgpus = &mut main_json[user_id]["FlexibleGpus"];
 
+                for fgpu in user_fgpus.members_mut() {
+                    if fgpu["State"] == "detaching" {
+                        fgpu["State"] = "allocated".into()
+                    } else if fgpu["State"] == "attaching" {
+                        fgpu["State"] = "attached".into()
+                    }
+                }
                 json["FlexibleGpus"] = (*user_fgpus).clone();
 
                 if !bytes.is_empty() {
@@ -1940,7 +2004,7 @@ impl RicCall {
             },
             RicCall::DeleteFlexibleGpu => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
+                    return eval_bad_auth(req_id, json, "DeleteFlexibleGpu require v4 signature")
                 }
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
                 let in_json = require_in_json!(bytes);
@@ -1951,7 +2015,7 @@ impl RicCall {
             },
             RicCall::DeleteDirectLink => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
+                    return eval_bad_auth(req_id, json, "DeleteDirectLink require v4 signature")
                 }
                 let user_fgpu = &mut main_json[user_id]["DirectLinks"];
                 let in_json = require_in_json!(bytes);
@@ -2037,6 +2101,9 @@ impl FromStr for RicCall {
             "/LinkFlexibleGpu" | "/api/v1/LinkFlexibleGpu" | "/api/latest/LinkFlexibleGpu" =>
                 Ok(RicCall::LinkFlexibleGpu),
 
+            "/UnlinkFlexibleGpu" | "/api/v1/UnlinkFlexibleGpu" | "/api/latest/UnlinkFlexibleGpu" =>
+                Ok(RicCall::UnlinkFlexibleGpu),
+
             "/CreatePublicIp" | "/api/v1/CreatePublicIp" | "/api/latest/CreatePublicIp" =>
                 Ok(RicCall::CreatePublicIp),
 
@@ -2049,6 +2116,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteVms),
             "/StopVms" | "/api/v1/StopVms" | "/api/latest/StopVms" =>
                 Ok(RicCall::StopVms),
+            "/StartVms" | "/api/v1/StartVms" | "/api/latest/StartVms" =>
+                Ok(RicCall::StartVms),
             "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
                 Ok(RicCall::DeleteLoadBalancer),
             "/DeleteDirectLink" | "/api/v1/DeleteDirectLink" | "/api/latest/DeleteDirectLink" =>
