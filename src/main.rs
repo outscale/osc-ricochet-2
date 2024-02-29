@@ -403,12 +403,15 @@ impl RicCall {
                 }
 
                 let user_vms = &mut main_json[user_id]["Vms"];
+                let mut rm_array = vec![];
 
-                for vm in user_vms.members_mut() {
+                for (idx, vm) in user_vms.members_mut().enumerate() {
                     if vm["State"] == "pending" {
                         vm["State"] = "running".into()
                     } else if vm["State"] == "stopping" {
                         vm["State"] = "stopped".into()
+                    } else if vm["State"] == "terminated" {
+                        rm_array.push(idx);
                     }
                 }
 
@@ -443,6 +446,16 @@ impl RicCall {
                             return bad_argument(req_id, json, "Invalide json");
                         }
                     }
+                }
+
+                for i in rm_array {
+                    let vm_id = main_json[user_id]["Vms"][i]["VmId"].clone();
+                    for (fgpu_idx, fgpu) in main_json[user_id]["FlexibleGpus"].clone().members().enumerate() {
+                        if fgpu["VmId"] == vm_id && fgpu["DeleteOnVmDeletion"] == true  {
+                            main_json[user_id]["FlexibleGpus"].array_remove(fgpu_idx);
+                        }
+                    }
+                    main_json[user_id]["Vms"].array_remove(i);
                 }
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -522,8 +535,7 @@ impl RicCall {
                                 let ids = &in_json["VmIds"];
 
                                 json["Vms"] = json::JsonValue::new_array();
-                                let mut rm_array = vec![];
-                                for (idx, vm) in user_vms.members_mut().enumerate() {
+                                for vm in user_vms.members_mut() {
                                     let mut need_rm = true;
 
                                     for id in ids.members() {
@@ -534,11 +546,7 @@ impl RicCall {
                                     if need_rm {
                                         vm["State"] = "terminated".into();
                                         json["Vms"].push((*vm).clone()).unwrap();
-                                        rm_array.push(idx);
                                     }
-                                }
-                                for i in rm_array {
-                                    user_vms.array_remove(i);
                                 }
                             }
                         },
