@@ -1936,7 +1936,7 @@ impl RicCall {
                     "RootDeviceType": "ebs",
                     "RootDeviceName": "/dev/sda1",
                     "IsSourceDestChecked": true,
-                    "KeypairName": "my_craft",
+                    KeypairName: optional_arg!(in_json, "KeypairName", "my_craft"),
                     "PublicIp": "100.200.60.100",
                     ImageId: optional_arg!(in_json, "ImageId", "ami-00000000"),
                     "PublicDnsName": "ows-148-253-69-185.eu-west-2.compute.outscale.com",
