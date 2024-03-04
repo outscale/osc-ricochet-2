@@ -1784,7 +1784,7 @@ impl RicCall {
             },
             RicCall::CreatePublicIp => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
+                    return eval_bad_auth(req_id, json, "CreatePublicIp require v4 signature")
                 }
                 let mut rng = thread_rng();
                 let eip = json::object!{
@@ -1800,7 +1800,7 @@ impl RicCall {
             },
             RicCall::CreateInternetService => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
+                    return eval_bad_auth(req_id, json, "CreateInternetService require v4 signature")
                 }
                 let igw = json::object!{
                     InternetServiceId: format!("igw-{:08x}", req_id),
