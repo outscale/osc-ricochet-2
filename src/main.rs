@@ -1928,7 +1928,7 @@ impl RicCall {
 
                 // {"BootOnCreation":true,"DeletionProtection":false,"ImageId":"ami-cd8d714e","KeypairName":"deployer","MaxVmsCount":1,"MinVmsCount":1,"NestedVirtualization":false,"SecurityGroupIds":["sg-ffffff00"],"SubnetId":"subnet-00000008","VmType":"tinav4.c1r1p2"}
                 println!("{:#}", in_json.dump());
-                let vm = json::object!{
+                let mut vm = json::object!{
                     VmType: optional_arg!(in_json, "VmType", "small"),
                     "VmInitiatedShutdownBehavior": "stop",
                     "State": "running",
@@ -1967,12 +1967,6 @@ impl RicCall {
                     "CreationDate": "2022-08-01T13:37:54.356Z",
                     "UserData": "",
                     "PrivateIp": "10.0.00.0",
-                    "SecurityGroups": [
-                        {
-                            "SecurityGroupName": "default",
-                            "SecurityGroupId": "sg-d56a6db7"
-                        }
-                    ],
                     "BsuOptimized": false,
                     "LaunchNumber": 0,
                     "Performance": "high",
@@ -1980,6 +1974,36 @@ impl RicCall {
                     "PrivateDnsName": "ip-10-8-41-9.eu-west-2.compute.internal"
                 };
 
+                if in_json.has_key("SecurityGroupIds") || in_json.has_key("SecurityGroups") {
+                    vm["SecurityGroups"] = json::array![];
+                    for sg_id in in_json["SecurityGroupIds"].members() {
+                        let name = match main_json[user_id]["SecurityGroups"].members_mut().find(|sg| *sg_id == sg["SecurityGroupId"]) {
+                            Some(sg) => &sg["SecurityGroupName"],
+                            _ => return bad_argument(req_id, json, format!("can't find SG id {}", sg_id).as_str())
+                        };
+                        vm["SecurityGroups"].push(json::object!{
+                            "SecurityGroupName": name.clone(),
+                            "SecurityGroupId": sg_id.clone()
+                        }).unwrap();
+                    }
+                    for sg_name in in_json["SecurityGroups"].members() {
+                        let id = match main_json[user_id]["SecurityGroups"].members_mut().find(|sg| *sg_name == sg["SecurityGroupName"]) {
+                            Some(sg) => &sg["SecurityGroupId"],
+                            _ => return bad_argument(req_id, json, format!("can't find SG named {}", sg_name).as_str())
+                        };
+                        vm["SecurityGroups"].push(json::object!{
+                            "SecurityGroupName": sg_name.clone(),
+                            "SecurityGroupId": id.clone()
+                        }).unwrap();
+                    }
+                } else {
+                    vm["SecurityGroups"] = json::array![
+                        json::object!{
+                            "SecurityGroupName": "default",
+                            "SecurityGroupId": format!("sg-{:08x}", 0xffffff00u32)
+                        }
+                    ];
+                }
                 main_json[user_id]["Vms"].push(
                     vm.clone()).unwrap();
                 json["Vms"] = json::array!{vm};
