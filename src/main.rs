@@ -11,6 +11,7 @@ use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::StatusCode;
 use base64::{engine::general_purpose, Engine as _};
+use json::JsonValue;
 //use hyper::header::{Headers, Authorization};
 use std::str::FromStr;
 use std::fs;
@@ -173,6 +174,16 @@ fn try_conver_response(rres: Result<(String, StatusCode), (String, StatusCode)>,
     let xml = xml_builder.build_from_json_string(res.0.as_str());
 
     (xml.unwrap(), StatusCode::OK)
+}
+
+fn get_default_subregion(cfg: &JsonValue) -> String {
+    match cfg.has_key("region") {
+        true => match cfg["region"].has_key("subregions") {
+            true => format!("{}{}", cfg["region"]["name"], cfg["region"]["subregions"][0]),
+            _ => format!("{}a", cfg["region"]["name"])
+        },
+        _ => "mud-half-3a".into()
+    }
 }
 
 #[derive(PartialEq)]
@@ -644,7 +655,7 @@ impl RicCall {
                         if in_json.has_key("SubregionNames") {
                             lb["SubregionNames"] = in_json["SubregionNames"].clone();
                         } else {
-                            lb["SubregionNames"] = json::array!["mud-half-3a"];
+                            lb["SubregionNames"] = json::array![get_default_subregion(&cfg)];
                         }
 
                         if in_json.has_key("Tags") {
@@ -1948,7 +1959,7 @@ impl RicCall {
                     "Hypervisor": "xen",
                     "Placement": {
                         "Tenancy": "default",
-                        "SubregionName": "mud-half-3a"
+                        "SubregionName": get_default_subregion(&cfg),
                     },
                     "ProductCodes": [
                         "0001"

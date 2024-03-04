@@ -4,7 +4,7 @@
     "region": {
 	"name": "eu-west-2",
 	"subregions": ["a", "b"]
-    }
+    },
     "users": [
 	{
 	    "access_key": "11112211111110000000",
