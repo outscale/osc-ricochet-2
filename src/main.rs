@@ -1290,9 +1290,30 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "ReadSecurityGroups require v4 signature")
                 }
 
-                let user_dl = &main_json[user_id]["SecurityGroups"];
+                let user_sgs = &main_json[user_id]["SecurityGroups"];
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    println!("ReadSGm in: {:#}", in_json.dump());
+                    let filters = require_arg!(in_json, "Filters");
+                    json["SecurityGroups"] = json::JsonValue::new_array();
+                    for sg in user_sgs.members() {
+                        let mut need_add = true;
 
-                json["SecurityGroups"] = (*user_dl).clone();
+                        need_add = have_request_filter(&filters, sg,
+                                            "SecurityGroupNames",
+                                            "SecurityGroupName", need_add);
+                        need_add = have_request_filter(&filters, sg,
+                                            "SecurityGroupIds",
+                                            "SecurityGroupId", need_add);
+                        if need_add {
+                            json["SecurityGroups"].push((*sg).clone()).unwrap();
+                        }
+                    }
+
+
+                } else {
+                    json["SecurityGroups"] = (*user_sgs).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
