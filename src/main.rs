@@ -2326,14 +2326,13 @@ impl FromStr for RicCall {
     }
 }
 
-fn which_v4_to_date(which_v4: & String) -> &str
+fn which_v4_to_date(which_v4: & str) -> &str
 {
-    if which_v4 == "OSC4" {
-        return "X-Osc-Date"
-    } else if which_v4 == "AWS4" {
-        return "X-Amz-Date"
+    match which_v4 {
+        "OSC4" => "X-Osc-Date",
+        "AWS4" => "X-Amz-Date",
+        _ => "X-Unknow-Date"
     }
-    "X-Unknow-Date"
 }
 
 fn clasify_v4(userpass: & str) ->  Option<(&str, String)>
