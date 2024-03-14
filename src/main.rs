@@ -2384,6 +2384,8 @@ async fn handler(req: Request<Body>,
         let auth_type = match cfg["auth_type"].as_str().unwrap() {
             "exist" => 0,
             "headarches" => 1,
+            "headaches" => 1,
+            "full" => 1,
             _ => -1
         };
         let userpass = match headers.get("Authorization") {
