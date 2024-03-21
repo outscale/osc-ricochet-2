@@ -1928,6 +1928,20 @@ impl RicCall {
 
                 // {"BootOnCreation":true,"DeletionProtection":false,"ImageId":"ami-cd8d714e","KeypairName":"deployer","MaxVmsCount":1,"MinVmsCount":1,"NestedVirtualization":false,"SecurityGroupIds":["sg-ffffff00"],"SubnetId":"subnet-00000008","VmType":"tinav4.c1r1p2"}
                 println!("{:#}", in_json.dump());
+
+                // Vreate Volumes, should be optional TODO
+                let vol = json::object!{
+                    VolumeId: format!("vol-{:08x}", req_id),
+                    Tags: [],
+                    VolumeType: "standard",
+                    SubregionName: get_default_subregion(&cfg),
+                    State: "creating",
+                    CreationDate: "2022-08-01T13:37:54.356Z",
+                    Iops: 100,
+                    LinkedVolumes: [],
+                    Size: 10
+                };
+
                 let mut vm = json::object!{
                     VmType: optional_arg!(in_json, "VmType", "small"),
                     "VmInitiatedShutdownBehavior": "stop",
@@ -1947,7 +1961,7 @@ impl RicCall {
                         {
                             "DeviceName": "/dev/sda1",
                             "Bsu": {
-                                "VolumeId": "vol-6ce9a61e",
+                                "VolumeId": vol["VolumeId"].clone(),
                                 "State": "attached",
                                 "LinkDate": "2022-08-01T13:37:54.356Z",
                                 "DeleteOnVmDeletion": true
@@ -2006,6 +2020,8 @@ impl RicCall {
                 }
                 main_json[user_id]["Vms"].push(
                     vm.clone()).unwrap();
+                main_json[user_id]["Volumes"].push(
+                    vol.clone()).unwrap();
                 json["Vms"] = json::array!{vm};
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
