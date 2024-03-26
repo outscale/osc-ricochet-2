@@ -2401,6 +2401,7 @@ async fn handler(req: Request<Body>,
             "headarches" => 1,
             "headaches" => 1,
             "full" => 1,
+            "mix" => 2,
             _ => -1
         };
         let userpass = match headers.get("Authorization") {
@@ -2510,7 +2511,7 @@ async fn handler(req: Request<Body>,
                     _ => return v4_error_ret(&mut error_msg, "missing 'Signature='")
                 };
 
-                if auth_type < 1 {
+                if auth_type < 1  || auth_type == 2 {
                     return ret;
                 }
 
