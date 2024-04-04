@@ -2558,17 +2558,21 @@ async fn handler(req: Request<Body>,
                     _ => return v4_error_ret(&mut error_msg, "fail to get secret_key")
                 };
 
+                /* 1rst secret key as key + date as data */
                 let mut hmac = match HmacSha256::new_from_slice(format!("{}{}", which_v4, true_sk).as_bytes()) {
                     Ok(v) => v,
                     _ => return false
                 };
                 hmac.update(short_date.as_bytes());
+
+                /* 2nd old hash as key + region as data */
                 hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
                     Ok(v) => v,
                     _ => return false
                 };
                 hmac.update(region.as_bytes());
 
+                /*  3rd: old hash + api */
                 hmac =  match HmacSha256::new_from_slice(&hmac.finalize().into_bytes()) {
                     Ok(v) => v,
                     _ => return false
