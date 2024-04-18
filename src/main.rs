@@ -964,7 +964,20 @@ impl RicCall {
                 println!("{:#}", in_json.dump());
 
                 let ip = format!("eipassoc-{:08x}", req_id);
-                let ip_id = require_arg!(in_json, "PublicIpId");
+                let ip_id = if in_json.has_key("PublicIp") {
+                    let pub_ip = in_json["PublicIp"].clone();
+
+                    match main_json[user_id]["PublicIps"].members().
+                        find(|ip| pub_ip == ip["PublicIp"]) {
+                            Some(ip) => ip["PublicIpId"].clone(),
+                            _ => return bad_argument(
+                                req_id, json, "PublicIp doesn't corespond to an existing Ip")
+                    }
+                } else if in_json.has_key("PublicIpId") {
+                    in_json["PublicIpId"].clone()
+                } else {
+                    return bad_argument(req_id, json, "require either PublicIpId or PublicIp")
+                };
                 let user = &mut main_json[user_id];
                 let ip_idx = match user["PublicIps"].members().position(|iwg| ip_id == iwg["PublicIpId"]) {
                     Some(idx) => idx,
@@ -972,7 +985,7 @@ impl RicCall {
                 };
                 let mut to_push = json::object!{
                     LinkPublicIpId: ip.clone(),
-                    PublicIpId: ip_id.clone()
+                    PublicIpId: ip_id
                 };
 
                 if in_json.has_key("VmId") {
