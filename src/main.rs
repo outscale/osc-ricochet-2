@@ -1318,23 +1318,25 @@ impl RicCall {
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
                     println!("ReadSGm in: {:#}", in_json.dump());
-                    let filters = require_arg!(in_json, "Filters");
-                    json["SecurityGroups"] = json::JsonValue::new_array();
-                    for sg in user_sgs.members() {
-                        let mut need_add = true;
+                    if in_json.has_key("Filters") {
+                        let filters = &in_json["Filters"];
+                        json["SecurityGroups"] = json::JsonValue::new_array();
+                        for sg in user_sgs.members() {
+                            let mut need_add = true;
 
-                        need_add = have_request_filter(&filters, sg,
-                                            "SecurityGroupNames",
-                                            "SecurityGroupName", need_add);
-                        need_add = have_request_filter(&filters, sg,
-                                            "SecurityGroupIds",
-                                            "SecurityGroupId", need_add);
-                        if need_add {
-                            json["SecurityGroups"].push((*sg).clone()).unwrap();
+                            need_add = have_request_filter(filters, sg,
+                                                           "SecurityGroupNames",
+                                                           "SecurityGroupName", need_add);
+                            need_add = have_request_filter(filters, sg,
+                                                           "SecurityGroupIds",
+                                                           "SecurityGroupId", need_add);
+                            if need_add {
+                                json["SecurityGroups"].push((*sg).clone()).unwrap();
+                            }
                         }
+                    } else {
+                        json["SecurityGroups"] = (*user_sgs).clone();
                     }
-
-
                 } else {
                     json["SecurityGroups"] = (*user_sgs).clone();
                 }
