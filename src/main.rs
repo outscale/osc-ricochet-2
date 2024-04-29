@@ -231,6 +231,7 @@ enum RicCall {
     DeleteRouteTable,
     DeleteRoute,
     DeleteVolume,
+    DeleteNatService,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -852,6 +853,18 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 
             },
+            RicCall::DeleteNatService => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNatService require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let user_ns = &mut main_json[user_id]["NatServices"];
+                let id = require_arg!(in_json, "NatServiceId");
+
+                array_remove!(user_ns, |n| n["NatServiceId"] == id);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+
+            },
             RicCall::CreateNatService => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "LinkPublicIp require v4 signature")
@@ -1094,6 +1107,7 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "UnlinkInternetService require v4 signature")
                 }
                 let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
                 let id = require_arg!(in_json, "InternetServiceId");
                 let net_id = require_arg!(in_json, "NetId");
 
@@ -2375,6 +2389,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateNatService),
             "/ReadNatServices" | "/api/v1/ReadNatServices" | "/api/latest/ReadNatServices" =>
                 Ok(RicCall::ReadNatServices),
+            "/DeleteNatService" | "/api/v1/DeleteNatService" | "/api/latest/DeleteNatService" =>
+                Ok(RicCall::DeleteNatService),
             "/CreateRouteTable" | "/api/v1/CreateRouteTable" | "/api/latest/CreateRouteTable" =>
                 Ok(RicCall::CreateRouteTable),
             "/DeleteRouteTable" | "/api/v1/DeleteRouteTable" | "/api/latest/DeleteRouteTable" =>
