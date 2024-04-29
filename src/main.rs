@@ -214,6 +214,7 @@ enum RicCall {
     CreateSubnet,
     CreateRouteTable,
     CreateRoute,
+    CreateNatService,
 
     DeleteNet,
     DeleteSubnet,
@@ -252,6 +253,7 @@ enum RicCall {
     ReadSubnets,
     ReadAdminPassword,
     ReadTags,
+    ReadNatServices,
 
     LinkInternetService,
     LinkRouteTable,
@@ -836,6 +838,47 @@ impl RicCall {
             RicCall::DeleteRoute => {
                 // TODO
                 json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::ReadNatServices => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadNatServices require v4 signature")
+                }
+
+                let user_dl = &main_json[user_id]["NatServices"];
+
+                json["NatServices"] = (*user_dl).clone();
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+
+            },
+            RicCall::CreateNatService => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "LinkPublicIp require v4 signature")
+                }
+                let user = &mut main_json[user_id];
+                let in_json = require_in_json!(bytes);
+                let ip_id = require_arg!(in_json, "PublicIpId");
+                let subnet_id = require_arg!(in_json, "SubnetId");
+                let ip = match user["PublicIps"].members().find(|ip| ip_id == ip["PublicIpId"]) {
+                    Some(ip) => ip,
+                    _ => return bad_argument(req_id, json, "CreateNatService doesn't corespond to an existing id")
+                };
+                let nat_service = json::object!{
+                    SubnetId: subnet_id,
+                    State: "available",
+                    PublicIps: [
+                        {
+                            PublicIpId: ip_id.clone(),
+                            PublicIp: ip["PublicIp"].clone()
+                        }
+                    ],
+                    NatServiceId: format!("nat-{:08x}", req_id)
+                };
+
+                main_json[user_id]["NatServices"].push(
+                    nat_service.clone()).unwrap();
+                json["NatService"] = nat_service;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateRoute => {
@@ -2328,6 +2371,10 @@ impl FromStr for RicCall {
             "/ReadSubnets" | "/api/v1/ReadSubnets" | "/api/latest/ReadSubnets" =>
                 Ok(RicCall::ReadSubnets),
 
+            "/CreateNatService" | "/api/v1/CreateNatService" | "/api/latest/CreateNatService" =>
+                Ok(RicCall::CreateNatService),
+            "/ReadNatServices" | "/api/v1/ReadNatServices" | "/api/latest/ReadNatServices" =>
+                Ok(RicCall::ReadNatServices),
             "/CreateRouteTable" | "/api/v1/CreateRouteTable" | "/api/latest/CreateRouteTable" =>
                 Ok(RicCall::CreateRouteTable),
             "/DeleteRouteTable" | "/api/v1/DeleteRouteTable" | "/api/latest/DeleteRouteTable" =>
@@ -2793,6 +2840,7 @@ async fn main() {
                     Description: "default security group",
                 }
             },
+            NatServices: json::JsonValue::new_array(),
             DirectLinks: json::JsonValue::new_array(),
             Nics: json::JsonValue::new_array(),
             Nets: json::JsonValue::new_array(),
