@@ -1,5 +1,5 @@
 {
-    "auth_type": "none",
+    "auth_type": "exist",
     "in_convertion": true,
     "region": {
 	"name": "eu-west-2",
