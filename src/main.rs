@@ -439,6 +439,10 @@ impl RicCall {
                             if in_json.has_key("Filters") {
                                 let filter = &in_json["Filters"];
 
+                                if !filter.is_object() {
+                                    return bad_argument(req_id, json, "Filter must be an object")
+                                }
+
                                 json["Vms"] = json::JsonValue::new_array();
 
                                 for vm in user_vms.members() {
