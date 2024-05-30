@@ -426,6 +426,14 @@ impl RicCall {
                         vm["State"] = "stopped".into()
                     } else if vm["State"] == "terminated" {
                         rm_array.push(idx);
+                    } else if vm["State"] == "shutting-down" {
+                        if vm["VmInitiatedShutdownBehavior"] == "restart" {
+                            vm["State"] = "pending".into()
+                        } else if vm["VmInitiatedShutdownBehavior"] == "terminated" {
+                            vm["State"] = "terminated".into()
+                        } else {
+                            vm["State"] = "stopping".into()
+                        }
                     }
                 }
 
@@ -492,6 +500,11 @@ impl RicCall {
                             let mut new_state = "stopping";
                             if vm["State"] == "stopped" {
                                 new_state = "stopped"
+                            }
+                            if vm["VmInitiatedShutdownBehavior"] == "terminated" {
+                                new_state = "terminated"
+                            } else if vm["VmInitiatedShutdownBehavior"] == "restart" {
+                                new_state = "shutting-down"
                             }
                             vms_ret.push(json::object!{
                                 "VmId": id.to_string(),
@@ -1769,6 +1782,7 @@ impl RicCall {
                 }
 
                 let in_json = require_in_json!(bytes);
+                println!("DeleteSecurityGroup: {:#}", in_json.dump());
                 let user_sgs = &mut main_json[user_id]["SecurityGroups"];
 
                 let id = optional_arg!(in_json, "SecurityGroupId", -1);
@@ -1987,7 +2001,16 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 let vm_id = require_arg!(in_json, "VmId");
-                json["ricochet-info"] = format!("vm id: {}, but update vm not implemented", vm_id).into();
+                json["ricochet-info"] = format!("vm id: {}, but update vm barly implemented", vm_id).into();
+                // {"VmId":"i-00000085","VmInitiatedShutdownBehavior":"restart"}
+                let vm = match get_by_id!("Vms", "VmId", vm_id) {
+                    Ok((_, idx)) => &mut main_json[user_id]["Vms"][idx],
+                    _ => return bad_argument(req_id, json, "Vm not found")
+                };
+                if in_json.has_key("VmInitiatedShutdownBehavior") {
+                    vm["VmInitiatedShutdownBehavior"] = in_json["VmInitiatedShutdownBehavior"].clone()
+                }
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateVms => {
@@ -2020,7 +2043,7 @@ impl RicCall {
 
                 let mut vm = json::object!{
                     VmType: optional_arg!(in_json, "VmType", "small"),
-                    "VmInitiatedShutdownBehavior": "stop",
+                    VmInitiatedShutdownBehavior: optional_arg!(in_json, "VmInitiatedShutdownBehavior", "stop"),
                     "State": "running",
                     "StateReason": "",
                     "RootDeviceType": "ebs",
