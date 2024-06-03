@@ -265,6 +265,7 @@ enum RicCall {
     ReadAdminPassword,
     ReadTags,
     ReadNatServices,
+    ReadSnapshots,
 
     LinkInternetService,
     LinkRouteTable,
@@ -925,30 +926,45 @@ impl RicCall {
                 json["NatService"] = nat_service;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
-            RicCall::CreateSnapshot => {
+            RicCall::ReadSnapshots => {
                 if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateRoute require v4 signature")
+                    return eval_bad_auth(req_id, json, "ReadSnapshots require v4 signature")
+                }
+                let snapshots = &mut main_json[user_id]["Snapshots"];
+                for snap in snapshots.members_mut() {
+                    if snap["State"] == "pending" {
+                        snap["State"] = "completed".into();
+                        snap["Progress"] = 100.into();
+                    }
                 }
 
-                /*
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    let filter = &in_json["Filters"];
 
-                "Snapshot": {
-                "VolumeSize": 10,
-                "AccountId": "123456789012",
-                "VolumeId": "vol-12345678",
-                "CreationDate": "2010-10-01T12:34:56.789Z",
-                "PermissionsToCreateVolume": {
-                "GlobalPermission": false,
-                "AccountIds": []
-            },
-                "Progress": 100,
-                "SnapshotId": "snap-12345678",
-                "State": "completed",
-                "Description": "Snapshot copied from another snapshot",
-                "Tags": []
-            },
+                    json["Snapshots"] = json::JsonValue::new_array();
 
-                */
+                    for snap in snapshots.members() {
+                        let mut need_add = true;
+
+                        need_add = have_request_filter(filter, snap,
+                                                       "SnapshotIds",
+                                                       "SnapshotId", need_add);
+                        if need_add {
+                            json["Snapshots"].push((*snap).clone()).unwrap();
+                        }
+                    }
+
+                } else {
+                    json["Snapshots"] = (*snapshots).clone();
+                }
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateSnapshot => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateSnapshot require v4 signature")
+                }
+
                 let in_json = require_in_json!(bytes);
                 let snap = if in_json.has_key("VolumeId") {
                     let volume_id = in_json["VolumeId"].clone();
@@ -2520,6 +2536,8 @@ impl FromStr for RicCall {
 
             "/CreateSnapshot" | "/api/v1/CreateSnapshot" | "/api/latest/CreateSnapshot" =>
                 Ok(RicCall::CreateSnapshot),
+            "/ReadSnapshots" | "/api/v1/ReadSnapshots" | "/api/latest/ReadSnapshots" =>
+                Ok(RicCall::ReadSnapshots),
 
 
             "/CreateNatService" | "/api/v1/CreateNatService" | "/api/latest/CreateNatService" =>
