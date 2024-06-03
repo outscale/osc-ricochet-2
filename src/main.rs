@@ -2069,8 +2069,8 @@ impl RicCall {
                     ],
                     VmId: vm_id,
                     Placement: {
-                        "Tenancy": "default",
-                        "SubregionName": get_default_subregion(&cfg),
+                        Tenancy: "default",
+                        SubregionName: get_default_subregion(&cfg),
                     },
                     "ReservationId": "r-a3df6a95",
                     "Hypervisor": "xen",
