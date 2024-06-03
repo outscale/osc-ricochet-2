@@ -2068,12 +2068,12 @@ impl RicCall {
                         }
                     ],
                     VmId: vm_id,
-                    "ReservationId": "r-a3df6a95",
-                    "Hypervisor": "xen",
-                    "Placement": {
+                    Placement: {
                         "Tenancy": "default",
                         "SubregionName": get_default_subregion(&cfg),
                     },
+                    "ReservationId": "r-a3df6a95",
+                    "Hypervisor": "xen",
                     "ProductCodes": [
                         "0001"
                     ],
@@ -2087,6 +2087,17 @@ impl RicCall {
                     "PrivateDnsName": "ip-10-8-41-9.eu-west-2.compute.internal"
                 };
 
+                // "Placement":{"SubregionName":"eu-west-2a"}
+                if in_json.has_key("Placement") {
+                    let in_placement = &in_json["Placement"];
+
+                    if in_placement.has_key("SubregionName") {
+                        vm["Placement"]["SubregionName"] = in_placement["SubregionName"].clone();
+                    }
+                    if in_placement.has_key("Tenancy") {
+                        vm["Placement"]["Tenancy"] = in_placement["Tenancy"].clone();
+                    }
+                }
                 if in_json.has_key("SecurityGroupIds") || in_json.has_key("SecurityGroups") {
                     vm["SecurityGroups"] = json::array![];
                     for sg_id in in_json["SecurityGroupIds"].members() {
