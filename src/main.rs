@@ -242,6 +242,7 @@ enum RicCall {
     DeleteRoute,
     DeleteVolume,
     DeleteNatService,
+    DeleteSnapshot,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -958,6 +959,17 @@ impl RicCall {
                 } else {
                     json["Snapshots"] = (*snapshots).clone();
                 }
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::DeleteSnapshot => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateSnapshot require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                let snapshots = &mut main_json[user_id]["Snapshots"];
+                let id = require_arg!(in_json, "SnapshotId");
+
+                array_remove!(snapshots, |n| n["SnapshotId"] == id);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSnapshot => {
@@ -2538,7 +2550,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateSnapshot),
             "/ReadSnapshots" | "/api/v1/ReadSnapshots" | "/api/latest/ReadSnapshots" =>
                 Ok(RicCall::ReadSnapshots),
-
+            "/DeleteSnapshot" | "/api/v1/DeleteSnapshot" | "/api/latest/DeleteSnapshot" =>
+                Ok(RicCall::DeleteSnapshot),
 
             "/CreateNatService" | "/api/v1/CreateNatService" | "/api/latest/CreateNatService" =>
                 Ok(RicCall::CreateNatService),
