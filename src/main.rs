@@ -120,6 +120,15 @@ fn serv_error(req_id: usize , mut json: json::JsonValue,
         Err((jsonobj_to_strret(json, req_id), StatusCode::from_u16(503).unwrap()))
 }
 
+fn bad(req_id: usize ,mut json: json::JsonValue,
+                error:  &str, num: i32, type_err:  &str) ->
+    Result<(String, StatusCode), (String, StatusCode)> {
+        eprintln!("bad_argument: {}", error);
+        json["Errors"] = json::array![json::object!{Type: type_err, Details: error, Code: num}];
+        Err((jsonobj_to_strret(json, req_id), StatusCode::from_u16(400).unwrap()))
+}
+
+
 fn bad_argument(req_id: usize ,mut json: json::JsonValue,
                 error:  &str) ->
     Result<(String, StatusCode), (String, StatusCode)> {
@@ -571,6 +580,10 @@ impl RicCall {
 
                                     for id in ids.members() {
                                         if *id == vm["VmId"] {
+                                            if vm["DeletionProtection"] == true {
+                                                return bad(req_id, json, "", 8018,
+                                                           "OperationNotSupported");
+                                            }
                                             need_rm = true;
                                         }
                                     }
@@ -2012,6 +2025,9 @@ impl RicCall {
                 if in_json.has_key("KeypairName") {
                     vm["KeypairName"] = in_json["KeypairName"].clone()
                 }
+                if in_json.has_key("DeletionProtection") {
+                    vm["DeletionProtection"] = in_json["DeletionProtection"].clone()
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -2055,7 +2071,7 @@ impl RicCall {
                     "PublicIp": "100.200.60.100",
                     ImageId: optional_arg!(in_json, "ImageId", "ami-00000000"),
                     "PublicDnsName": "ows-148-253-69-185.eu-west-2.compute.outscale.com",
-                    "DeletionProtection": false,
+                    DeletionProtection: optional_arg!(in_json, "DeletionProtection", false),
                     "Architecture": "x86_64",
                     "NestedVirtualization": false,
                     "BlockDeviceMappings": [
