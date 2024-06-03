@@ -123,7 +123,7 @@ fn serv_error(req_id: usize , mut json: json::JsonValue,
 fn bad(req_id: usize ,mut json: json::JsonValue,
                 error:  &str, num: i32, type_err:  &str) ->
     Result<(String, StatusCode), (String, StatusCode)> {
-        eprintln!("bad_argument: {}", error);
+        eprintln!("bad: {}", error);
         json["Errors"] = json::array![json::object!{Type: type_err, Details: error, Code: num}];
         Err((jsonobj_to_strret(json, req_id), StatusCode::from_u16(400).unwrap()))
 }
@@ -224,6 +224,7 @@ enum RicCall {
     CreateRouteTable,
     CreateRoute,
     CreateNatService,
+    CreateSnapshot,
 
     DeleteNet,
     DeleteSubnet,
@@ -922,6 +923,82 @@ impl RicCall {
                 main_json[user_id]["NatServices"].push(
                     nat_service.clone()).unwrap();
                 json["NatService"] = nat_service;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateSnapshot => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateRoute require v4 signature")
+                }
+
+                /*
+
+                "Snapshot": {
+                "VolumeSize": 10,
+                "AccountId": "123456789012",
+                "VolumeId": "vol-12345678",
+                "CreationDate": "2010-10-01T12:34:56.789Z",
+                "PermissionsToCreateVolume": {
+                "GlobalPermission": false,
+                "AccountIds": []
+            },
+                "Progress": 100,
+                "SnapshotId": "snap-12345678",
+                "State": "completed",
+                "Description": "Snapshot copied from another snapshot",
+                "Tags": []
+            },
+
+                */
+                let in_json = require_in_json!(bytes);
+                let snap = if in_json.has_key("VolumeId") {
+                    let volume_id = in_json["VolumeId"].clone();
+
+                    match get_by_id!("Volumes", "VolumeId", volume_id) {
+                        Ok((t, idx)) => json::object!{
+                            VolumeSize: main_json[user_id][t][idx]["Size"].clone(),
+                            AccountId: format!("{:08x}", user_id),
+                            VolumeId: volume_id,
+                            CreationDate: main_json[user_id][t][idx]["CreationDate"].clone(),
+                            "PermissionsToCreateVolume": {
+                                "GlobalPermission": false,
+                                "AccountIds": []
+                            },
+                            Progress: 0,
+                            SnapshotId: format!("snap-{:08x}", req_id),
+                            State: "pending",
+                            Description: optional_arg!(in_json, "Description", "Snapshot created from a volume"),
+                            Tags: []
+
+                        },
+                        _ => return bad_argument(req_id, json, format!("Volume {} not found", volume_id).as_str())
+                    }
+                } else if in_json.has_key("SourceSnapshotId") {
+                    let snap_id = in_json["SourceSnapshotId"].clone();
+
+                    match get_by_id!("Snapshots", "SnapshotId", snap_id) {
+                        Ok((t, idx)) => json::object!{
+                            VolumeSize: main_json[user_id][t][idx]["VolumeSize"].clone(),
+                            AccountId: format!("{:08x}", user_id),
+                            CreationDate: main_json[user_id][t][idx]["CreationDate"].clone(),
+                            "PermissionsToCreateVolume": {
+                                "GlobalPermission": false,
+                                "AccountIds": []
+                            },
+                            Progress: 100,
+                            SnapshotId: format!("snap-{:08x}", req_id),
+                            State: "completed",
+                            Description: optional_arg!(in_json, "Description", "Snapshot copied from another snapshot"),
+                            Tags: []
+                        },
+                        _ => return bad_argument(req_id, json,
+                                                 format!("Snapshot {} not found", snap_id).as_str())
+                    }
+
+                } else {
+                    return bad_argument(req_id, json, "CreateSnapshot require either VolumeId or SourceSnapshotId");
+                };
+                main_json[user_id]["Snapshots"].push(snap.clone()).unwrap();
+                json["Snapshot"] = snap;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateRoute => {
@@ -2441,6 +2518,10 @@ impl FromStr for RicCall {
             "/ReadSubnets" | "/api/v1/ReadSubnets" | "/api/latest/ReadSubnets" =>
                 Ok(RicCall::ReadSubnets),
 
+            "/CreateSnapshot" | "/api/v1/CreateSnapshot" | "/api/latest/CreateSnapshot" =>
+                Ok(RicCall::CreateSnapshot),
+
+
             "/CreateNatService" | "/api/v1/CreateNatService" | "/api/latest/CreateNatService" =>
                 Ok(RicCall::CreateNatService),
             "/ReadNatServices" | "/api/v1/ReadNatServices" | "/api/latest/ReadNatServices" =>
@@ -2923,7 +3004,8 @@ async fn main() {
             Keypairs: json::JsonValue::new_array(),
             InternetServices: json::JsonValue::new_array(),
             PublicIps: json::JsonValue::new_array(),
-            LinkPublicIps: json::JsonValue::new_array()
+            LinkPublicIps: json::JsonValue::new_array(),
+            Snapshots: json::JsonValue::new_array()
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
