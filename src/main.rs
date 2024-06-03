@@ -2002,13 +2002,15 @@ impl RicCall {
                 println!("{:#}", in_json.dump());
                 let vm_id = require_arg!(in_json, "VmId");
                 json["ricochet-info"] = format!("vm id: {}, but update vm barly implemented", vm_id).into();
-                // {"VmId":"i-00000085","VmInitiatedShutdownBehavior":"restart"}
                 let vm = match get_by_id!("Vms", "VmId", vm_id) {
                     Ok((_, idx)) => &mut main_json[user_id]["Vms"][idx],
                     _ => return bad_argument(req_id, json, "Vm not found")
                 };
                 if in_json.has_key("VmInitiatedShutdownBehavior") {
                     vm["VmInitiatedShutdownBehavior"] = in_json["VmInitiatedShutdownBehavior"].clone()
+                }
+                if in_json.has_key("KeypairName") {
+                    vm["KeypairName"] = in_json["KeypairName"].clone()
                 }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
