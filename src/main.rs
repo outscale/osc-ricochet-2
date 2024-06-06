@@ -2152,17 +2152,18 @@ impl RicCall {
                 println!("{:#}", in_json.dump());
 
                 // Vreate Volumes, should be optional TODO
-                let vol = json::object!{
-                    VolumeId: format!("vol-{:08x}", req_id),
-                    Tags: [],
-                    VolumeType: "standard",
-                    SubregionName: get_default_subregion(&cfg),
-                    State: "creating",
-                    CreationDate: "2022-08-01T13:37:54.356Z",
-                    Iops: 100,
-                    LinkedVolumes: [],
-                    Size: 10
-                };
+                let mut vol = json::array![
+                    json::object!{
+                        VolumeId: format!("vol-{:08x}", req_id),
+                        Tags: [],
+                        VolumeType: "standard",
+                        SubregionName: get_default_subregion(&cfg),
+                        State: "creating",
+                        CreationDate: "2022-08-01T13:37:54.356Z",
+                        Iops: 100,
+                        LinkedVolumes: [],
+                        Size: 10
+                }];
 
                 let mut vm = json::object!{
                     VmType: optional_arg!(in_json, "VmType", "small"),
@@ -2183,7 +2184,7 @@ impl RicCall {
                         {
                             "DeviceName": "/dev/sda1",
                             "Bsu": {
-                                "VolumeId": vol["VolumeId"].clone(),
+                                "VolumeId": vol[0]["VolumeId"].clone(),
                                 "State": "attached",
                                 "LinkDate": "2022-08-01T13:37:54.356Z",
                                 "DeleteOnVmDeletion": true
@@ -2210,6 +2211,33 @@ impl RicCall {
                     "PrivateDnsName": "ip-10-8-41-9.eu-west-2.compute.internal"
                 };
 
+                if in_json.has_key("BlockDeviceMappings") {
+                    let mut blockdevicemappings = json::array![];
+                    let in_blockdevicemappings = &in_json["BlockDeviceMappings"];
+                    vol = json::array![];
+
+                    for in_block in in_blockdevicemappings.members() {
+                        let mut out_block = in_block.clone();
+                        let out_bsu = &mut out_block["Bsu"];
+                        let mut rng = thread_rng();
+                        let vol_id: u32 = rng.gen();
+                        let v =json::object!{
+                            VolumeId: format!("vol-{:08x}", vol_id),
+                            Tags: [],
+                            VolumeType: optional_arg!(in_block["Bsu"], "VolumeType", "standard"),
+                            SubregionName: get_default_subregion(&cfg),
+                            State: "creating",
+                            CreationDate: "2022-08-01T13:37:54.356Z",
+                            Iops: 100,
+                            LinkedVolumes: [],
+                            Size: in_block["Bsu"]["VolumeSize"].clone()
+                        };
+                        out_bsu["VolumeId"] = v["VolumeId"].clone();
+                        vol.push(v).unwrap();
+                        blockdevicemappings.push(out_block).unwrap();
+                    }
+                    vm["BlockDeviceMappings"] = blockdevicemappings;
+                }
                 // "Placement":{"SubregionName":"eu-west-2a"}
                 if in_json.has_key("Placement") {
                     let in_placement = &in_json["Placement"];
@@ -2253,8 +2281,10 @@ impl RicCall {
                 }
                 main_json[user_id]["Vms"].push(
                     vm.clone()).unwrap();
-                main_json[user_id]["Volumes"].push(
-                    vol.clone()).unwrap();
+                for v in vol.members() {
+                    main_json[user_id]["Volumes"].push(
+                        v.clone()).unwrap();
+                }
                 json["Vms"] = json::array!{vm};
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -2287,9 +2317,10 @@ impl RicCall {
                                 "vol" => get_by_id!("Volumes", "VolumeId", id),
                                 "fgpu" => get_by_id!("FlexibleGpus", "FlexibleGpuId", id),
                                 "vpc" => get_by_id!("Nets", "NetId", id),
-                                _ => Err(bad_argument(req_id, json.clone(), "invalide resource id"))
+                                _ => Err(bad_argument(req_id, json.clone(),
+                                                      format!("invalide resource id {}", t).as_str()))
                             },
-                            _ => Err(bad_argument(req_id, json.clone(), "invalide resource id"))
+                            _ => Err(bad_argument(req_id, json.clone(), format!("invalide resource id {}", id).as_str()))
                         },
                         _ => Err(bad_argument(req_id, json.clone(), "invalide resource id"))
                     }
