@@ -267,6 +267,8 @@ enum RicCall {
     ReadTags,
     ReadNatServices,
     ReadSnapshots,
+    ReadClientGateways,
+    ReadVmTypes,
 
     LinkInternetService,
     LinkRouteTable,
@@ -294,7 +296,7 @@ enum RicCall {
 
 impl RicCall {
     fn is_free(&self) -> bool {
-        matches!(*self, RicCall::ReadPublicCatalog | RicCall::ReadRegions | RicCall::ReadPublicIpRanges)
+        matches!(*self, RicCall::ReadPublicCatalog | RicCall::ReadRegions | RicCall::ReadPublicIpRanges | RicCall::ReadVmTypes)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1125,6 +1127,27 @@ impl RicCall {
                 json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+
+	    RicCall::ReadVmTypes => {
+		json["VmTypes"] = json::array![json::object!{
+		    "VolumeCount": 0,
+		    "VmTypeName": "t2.small",
+		    "BsuOptimized": false,
+		    "MaxPrivateIps": 4,
+		    "MemorySize": 2,
+		    "VcoreCount": 1
+		}];
+		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+	    },
+
+	    RicCall::ReadClientGateways => {
+		if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadSecurityGroups require v4 signature")
+                }
+
+		json["ClientGateways"] = main_json[user_id]["ClientGateways"].clone();
+		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+	    },
             RicCall::LinkInternetService => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "LinkInternetService require v4 signature")
@@ -2166,7 +2189,7 @@ impl RicCall {
                 }];
 
                 let mut vm = json::object!{
-                    VmType: optional_arg!(in_json, "VmType", "small"),
+                    VmType: optional_arg!(in_json, "VmType", "t2.small"),
                     VmInitiatedShutdownBehavior: optional_arg!(in_json, "VmInitiatedShutdownBehavior", "stop"),
                     "State": "running",
                     "StateReason": "",
@@ -2472,6 +2495,12 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateDirectLink),
             "/CreateInternetService" | "/api/v1/CreateInternetService" | "/api/latest/CreateInternetService" =>
                 Ok(RicCall::CreateInternetService),
+
+            "/ReadVmTypes" | "/api/v1/ReadVmTypes" | "/api/latest/ReadVmTypes" =>
+                Ok(RicCall::ReadVmTypes),
+
+            "/ReadClientGateways" | "/api/v1/ReadClientGateways" | "/api/latest/ReadClientGateways" =>
+                Ok(RicCall::ReadClientGateways),
 
             "/LinkInternetService" | "/api/v1/LinkInternetService" | "/api/latest/LinkInternetService" =>
                 Ok(RicCall::LinkInternetService),
@@ -3067,7 +3096,8 @@ async fn main() {
             InternetServices: json::JsonValue::new_array(),
             PublicIps: json::JsonValue::new_array(),
             LinkPublicIps: json::JsonValue::new_array(),
-            Snapshots: json::JsonValue::new_array()
+            Snapshots: json::JsonValue::new_array(),
+	    ClientGateways: json::JsonValue::new_array()
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
