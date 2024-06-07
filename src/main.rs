@@ -1736,9 +1736,31 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "ReadTags require v4 signature")
                 }
 
-                let user_imgs = &main_json[user_id]["Tags"];
+                let user_tags = &main_json[user_id]["Tags"];
 
-                json["Tags"] = (*user_imgs).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+
+                    if in_json.has_key("Filters") {
+                        let filters = &in_json["Filters"];
+                        json["Tags"] = json::JsonValue::new_array();
+
+                        for t in user_tags.members() {
+                            let mut need_add = true;
+
+                            need_add = have_request_filter(filters, t,
+                                                           "ResourceIds",
+                                                           "ResourceId", need_add);
+
+                            if need_add {
+                                json["Tags"].push((*t).clone()).unwrap();
+                            }
+                        }
+                    }
+
+                } else {
+                    json["Tags"] = (*user_tags).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
