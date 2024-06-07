@@ -334,6 +334,18 @@ impl RicCall {
             }
         }
 
+        fn resource_types_to_type(types: &str) -> String {
+            match types {
+                "Vms" => "vm",
+                "SecurityGroups" => "securitygroup",
+                "Images" => "image",
+                "Volumes" => "volume",
+                "FlexibleGpus" => "flexiblegpu",
+                "Nets" => "net",
+                _ => "unknow"
+            }.into()
+        }
+
         macro_rules! get_by_id {
             ($resource_type:expr, $id_name:expr, $id:expr) => {{
                 match main_json[user_id][$resource_type].members().position(|m| m[$id_name] == $id) {
@@ -2383,7 +2395,7 @@ impl RicCall {
                         let mut ntag = (*tag).clone();
 
                         ntag["ResourceId"] = id.clone();
-                        ntag["ResourceType"] = resource_t.to_string().into();
+                        ntag["ResourceType"] = resource_types_to_type(resource_t).into();
 
                         match *self {
                             RicCall::CreateTags => {
