@@ -708,6 +708,17 @@ impl RicCall {
                             lb["SubregionNames"] = json::array![get_default_subregion(&cfg)];
                         }
 
+                        if in_json.has_key("PublicIp") {
+                            match main_json[user_id]["PublicIps"].members().
+                                find(|ip| in_json["PublicIp"] == ip["PublicIp"]) {
+                                    Some(_) => {},
+                                    _ => return bad_argument(
+                                        req_id, json, "PublicIp doesn't corespond to an existing Ip")
+                                }
+
+                            lb["PublicIp"] = in_json["PublicIp"].clone();
+                        }
+
                         if in_json.has_key("Tags") {
                             lb["Tags"] = in_json["Tags"].clone();
                         } else {
