@@ -1739,7 +1739,27 @@ impl RicCall {
 
                 let user_imgs = &main_json[user_id]["PublicIps"];
 
-                json["PublicIps"] = (*user_imgs).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    let filter = &in_json["Filters"];
+                    let public_ips = &mut main_json[user_id]["PublicIps"];
+
+                    json["PublicIps"] = json::JsonValue::new_array();
+
+                    for snap in public_ips.members() {
+                        let mut need_add = true;
+
+                        need_add = have_request_filter(filter, snap,
+                                                       "PublicIpIds",
+                                                       "PublicIpId", need_add);
+                        if need_add {
+                            json["PublicIps"].push((*snap).clone()).unwrap();
+                        }
+                    }
+
+                } else {
+                    json["PublicIps"] = (*user_imgs).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
