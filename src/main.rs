@@ -243,6 +243,7 @@ enum RicCall {
     DeleteVolume,
     DeleteNatService,
     DeleteSnapshot,
+    DeleteImage,
 
     ReadAccessKeys,
     ReadAccounts,
@@ -771,6 +772,19 @@ impl RicCall {
                 json["LoadBalancer"] = lb;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+	    RicCall::DeleteImage => {	
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+		println!("{:#}", in_json.dump());
+                let user_imgs = &mut main_json[user_id]["Images"];
+		let id = require_arg!(in_json, "ImageId");
+		array_remove!(user_imgs, |n| n["ImageId"] == id &&
+		    n["AccountId"] == format!("{:08x}", user_id)
+		);
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+	    },
             RicCall::CreateImage => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
@@ -2622,6 +2636,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteFlexibleGpu),
             "/CreateImage" | "/api/v1/CreateImage" | "/api/latest/CreateImage" =>
                 Ok(RicCall::CreateImage),
+            "/DeleteImage" | "/api/v1/DeleteImage" | "/api/latest/DeleteImage" =>
+                Ok(RicCall::DeleteImage),
             "/CreateLoadBalancer" | "/api/v1/CreateLoadBalancer" | "/api/latest/CreateLoadBalancer" =>
                 Ok(RicCall::CreateLoadBalancer),
             "/ReadAccounts" | "/api/v1/ReadAccounts" | "/api/latest/ReadAccounts" =>
