@@ -284,6 +284,7 @@ enum RicCall {
     UnlinkPublicIp,
 
     UpdateVm,
+    UpdateImage,
 
     StartVms,
     StopVms,
@@ -772,6 +773,31 @@ impl RicCall {
                 json["LoadBalancer"] = lb;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
+	    RicCall::UpdateImage => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "UpdateImage require v4 signature")
+                }
+		let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+                let image_id = require_arg!(in_json, "ImageId");
+		let image = match get_by_id!("Images", "ImageId", image_id) {
+                    Ok((_, idx)) => &mut main_json[user_id]["Images"][idx],
+                    _ => return bad_argument(req_id, json, "Image not found")
+                };
+
+		if in_json.has_key("PermissionsToLaunch") {
+		    let ptl = &in_json["PermissionsToLaunch"];
+		    if  ptl.has_key("Additions") {
+			let addition = &ptl["Additions"];
+
+			image["PermissionsToLaunch"] = addition.clone();
+		    }
+                }
+
+
+		json["Image"] = image.clone();
+		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+	    },
 	    RicCall::DeleteImage => {	
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
@@ -792,6 +818,10 @@ impl RicCall {
                 let image_id = format!("ami-{:08x}", req_id);
                 let mut image = json::object!{
                     AccountId: format!("{:08x}", user_id),
+		    PermissionsToLaunch: {
+			GlobalPermission: false,
+			AccountIds: []
+		    },
                     ImageId: image_id
                 };
                 if !users[user_id]["login"].is_null() {
@@ -802,6 +832,7 @@ impl RicCall {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
                         Ok(in_json) => {
+			    println!("{:#}", in_json.dump());
                             if in_json.has_key("ImageName") {
                                 image["ImageName"] = in_json["ImageName"].clone();
                             }
@@ -2236,6 +2267,7 @@ impl RicCall {
                     vm["DeletionProtection"] = in_json["DeletionProtection"].clone()
                 }
 
+		json["Vm"] = vm.clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateVms => {
@@ -2638,6 +2670,8 @@ impl FromStr for RicCall {
                 Ok(RicCall::CreateImage),
             "/DeleteImage" | "/api/v1/DeleteImage" | "/api/latest/DeleteImage" =>
                 Ok(RicCall::DeleteImage),
+            "/UpdateImage" | "/api/v1/UpdateImage" | "/api/latest/UpdateImage" =>
+                Ok(RicCall::UpdateImage),
             "/CreateLoadBalancer" | "/api/v1/CreateLoadBalancer" | "/api/latest/CreateLoadBalancer" =>
                 Ok(RicCall::CreateLoadBalancer),
             "/ReadAccounts" | "/api/v1/ReadAccounts" | "/api/latest/ReadAccounts" =>
