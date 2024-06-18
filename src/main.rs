@@ -871,7 +871,7 @@ impl RicCall {
                 }
                 main_json[user_id]["Images"].push(
                     image.clone()).unwrap();
-                json["Image"] = json::array!{image};
+                json["Image"] = image;
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSubnet => {
