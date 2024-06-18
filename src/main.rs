@@ -807,7 +807,7 @@ impl RicCall {
                 let user_imgs = &mut main_json[user_id]["Images"];
 		let id = require_arg!(in_json, "ImageId");
 		array_remove!(user_imgs, |n| n["ImageId"] == id &&
-		    n["AccountId"] == format!("{:08x}", user_id)
+		    n["AccountId"] == format!("{:012x}", user_id)
 		);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
@@ -817,7 +817,7 @@ impl RicCall {
                 }
                 let image_id = format!("ami-{:08x}", req_id);
                 let mut image = json::object!{
-                    AccountId: format!("{:08x}", user_id),
+                    AccountId: format!("{:012x}", user_id),
 		    PermissionsToLaunch: {
 			GlobalPermission: false,
 			AccountIds: []
@@ -847,7 +847,7 @@ impl RicCall {
 		    "FileLocation": "123456789012/create-image-example",
 		    "ImageType": "machine",
 		    "CreationDate": "2010-10-01T12:34:56.789Z",
-		    ImageName: null,
+		    ImageName: "an-image-with-no-name",
                 };
                 if !users[user_id]["login"].is_null() {
                     image["AccountAlias"] = users[user_id]["login"].clone()
@@ -871,7 +871,7 @@ impl RicCall {
                 }
                 main_json[user_id]["Images"].push(
                     image.clone()).unwrap();
-                json["Images"] = json::array!{image};
+                json["Image"] = json::array!{image};
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSubnet => {
@@ -1081,7 +1081,7 @@ impl RicCall {
                     match get_by_id!("Volumes", "VolumeId", volume_id) {
                         Ok((t, idx)) => json::object!{
                             VolumeSize: main_json[user_id][t][idx]["Size"].clone(),
-                            AccountId: format!("{:08x}", user_id),
+                            AccountId: format!("{:12x}", user_id),
                             VolumeId: volume_id,
                             CreationDate: main_json[user_id][t][idx]["CreationDate"].clone(),
                             "PermissionsToCreateVolume": {
@@ -1103,7 +1103,7 @@ impl RicCall {
                     match get_by_id!("Snapshots", "SnapshotId", snap_id) {
                         Ok((t, idx)) => json::object!{
                             VolumeSize: main_json[user_id][t][idx]["VolumeSize"].clone(),
-                            AccountId: format!("{:08x}", user_id),
+                            AccountId: format!("{:012x}", user_id),
                             CreationDate: main_json[user_id][t][idx]["CreationDate"].clone(),
                             "PermissionsToCreateVolume": {
                                 "GlobalPermission": false,
@@ -1936,7 +1936,7 @@ impl RicCall {
                     ConsumptionEntries:
                     json::array!{
                         json::object!{
-                            AccountId: format!("{:08x}", user_id),
+                            AccountId: format!("{:012x}", user_id),
                             Value: 0
                         }
                     }
@@ -2134,7 +2134,7 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
 
                 let dl = json::object!{
-                    AccountId: format!("{:08x}", user_id),
+                    AccountId: format!("{:012x}", user_id),
                     Bandwidth: require_arg!(in_json, "Bandwidth"),
                     DirectLinkId: format!("dxcon-{:08x}", req_id),
                     DirectLinkName: require_arg!(in_json, "DirectLinkName"),
@@ -2247,7 +2247,7 @@ impl RicCall {
                 let mut sg = json::object!{
                     Tags: json::array!{},
                     SecurityGroupId: sg_id,
-                    AccountId: format!("{:08x}", user_id),
+                    AccountId: format!("{:012x}", user_id),
                     OutboundRules: json::array!{},
                     InboundRules: json::array!{},
                     SecurityGroupName: require_arg!(in_json, "SecurityGroupName"),
@@ -2527,7 +2527,7 @@ impl RicCall {
                             json::object!{
                                 ShortDescription: "VM Limit",
                                 QuotaCollection: "Compute",
-                                AccountId: format!("{:08x}", user_id),
+                                AccountId: format!("{:012x}", user_id),
                                 Description: "Maximum number of VM this user can own",
                                 MaxValue: "not implemented",
                                 UsedValue: "not implemented",
@@ -2536,7 +2536,7 @@ impl RicCall {
                             json::object!{
                                 ShortDescription: "Bypass Group Size Limit",
                                 QuotaCollection: "Other",
-                                AccountId: format!("{:08x}", user_id),
+                                AccountId: format!("{:012x}", user_id),
                                 Description: "Maximum size of a bypass group",
                                 MaxValue: "not implemented",
                                 UsedValue: "not implemented",
@@ -3209,7 +3209,7 @@ async fn main() {
             LoadBalancers: json::array!{},
             Images: json::array!{
                 json::object!{
-                    AccountId: format!("{:08x}", 0xffffff),
+                    AccountId: format!("{:12x}", 0xffffff),
                     ImageId: format!("ami-{:08x}", 0xffffff00u32),
                     AccountAlias:"Outscale",
                     ImageName: "Fill More is for Penguin General"
@@ -3219,7 +3219,7 @@ async fn main() {
                 json::object!{
                     Tags: json::array!{},
                     SecurityGroupId: format!("sg-{:08x}", 0xffffff00u32),
-                    AccountId: format!("{:08x}", cnt_users),
+                    AccountId: format!("{:12x}", cnt_users),
                     OutboundRules: json::array!{},
                     InboundRules: json::array!{},
                     SecurityGroupName: "default",
