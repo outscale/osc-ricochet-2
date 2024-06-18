@@ -822,11 +822,38 @@ impl RicCall {
 			GlobalPermission: false,
 			AccountIds: []
 		    },
-                    ImageId: image_id
+                    ImageId: image_id,
+		    "StateComment": {},
+		    "State": "available",
+		    "RootDeviceType": "bsu",
+		    "RootDeviceName": "/dev/sda1",
+		    "ProductCodes": [
+			"0001"
+		    ],
+		    "Tags": [],
+		    "Description": "",
+		    "BlockDeviceMappings": [
+			{
+			    "DeviceName": "/dev/sda1",
+			    "Bsu": {
+				"VolumeType": "standard",
+				"DeleteOnVmDeletion": true,
+				"VolumeSize": 50,
+				"SnapshotId": "snap-12345678"
+			    }
+			}
+		    ],
+		    "Architecture": "x86_64",
+		    "FileLocation": "123456789012/create-image-example",
+		    "ImageType": "machine",
+		    "CreationDate": "2010-10-01T12:34:56.789Z",
+		    ImageName: null,
                 };
                 if !users[user_id]["login"].is_null() {
                     image["AccountAlias"] = users[user_id]["login"].clone()
-                }
+                } else {
+		    image["AccountAlias"] = "unknow".into()
+ 		}
 
                 if !bytes.is_empty() {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
