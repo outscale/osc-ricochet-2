@@ -798,7 +798,7 @@ impl RicCall {
 		json["Image"] = image.clone();
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
-	    RicCall::DeleteImage => {	
+	    RicCall::DeleteImage => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
                 }
@@ -824,7 +824,7 @@ impl RicCall {
 		    },
                     ImageId: image_id,
 		    "StateComment": {},
-		    "State": "available",
+		    State: "pending",
 		    "RootDeviceType": "bsu",
 		    "RootDeviceName": "/dev/sda1",
 		    "ProductCodes": [
@@ -1580,7 +1580,13 @@ impl RicCall {
                     return eval_bad_auth(req_id, json, "ReadImages require v4 signature")
                 }
 
-                let user_imgs = &main_json[user_id]["Images"];
+                let user_imgs = &mut main_json[user_id]["Images"];
+                for img in user_imgs.members_mut() {
+                    if img["State"] == "pending" {
+                        img["State"] = "available".into();
+                    }
+                }
+
                 if !bytes.is_empty() {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
@@ -1588,6 +1594,8 @@ impl RicCall {
                             return bad_argument(req_id, json, "Invalid JSON format")
                         },
                         Ok(in_json) => {
+                            println!("{:#}", in_json.dump());
+
                             if in_json.has_key("Filters") {
                                 let filters = &in_json["Filters"];
                                 if !filters.is_object() {
@@ -1600,6 +1608,10 @@ impl RicCall {
                                     need_add = have_request_filter(filters, img,
                                                                    "ImageNames",
                                                                    "ImageName", need_add);
+
+                                    need_add = have_request_filter(filters, img,
+                                                                   "ImageIds",
+                                                                   "ImageId", need_add);
 
                                     need_add = have_request_filter(filters, img,
                                                                    "AccountAliases",
@@ -3212,7 +3224,8 @@ async fn main() {
                     AccountId: format!("{:12x}", 0xffffff),
                     ImageId: format!("ami-{:08x}", 0xffffff00u32),
                     AccountAlias:"Outscale",
-                    ImageName: "Fill More is for Penguin General"
+                    ImageName: "Fill More is for Penguin General",
+                    State: "available",
                 }
             },
             SecurityGroups: json::array!{
