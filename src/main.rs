@@ -225,6 +225,7 @@ enum RicCall {
     CreateRoute,
     CreateNatService,
     CreateSnapshot,
+    CreateImageExportTask,
 
     DeleteNet,
     DeleteSubnet,
@@ -245,6 +246,7 @@ enum RicCall {
     DeleteSnapshot,
     DeleteImage,
 
+    ReadImageExportTasks,
     ReadAccessKeys,
     ReadAccounts,
     ReadFlexibleGpus,
@@ -811,6 +813,68 @@ impl RicCall {
 		);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
+            RicCall::ReadImageExportTasks => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
+                }
+
+                let user_iets = &mut main_json[user_id]["ImageExportTasks"];
+                let mut rm_array = vec![];
+
+                for (idx, iet) in user_iets.members_mut().enumerate() {
+                    let mut progress: u32 = iet["Progress"].as_u32().unwrap() + 10;
+                    if iet["State"] == "pending/queued" {
+                        iet["State"] = "pending".into();
+                    }
+                    if progress > 100 {
+                        progress = 100;
+                        if iet["State"] == "pending" {
+                            iet["State"] = "completed".into();
+                        } else {
+                            rm_array.push(idx);
+                        }
+                    }
+                    iet["Progress"] = progress.into();
+                }
+
+                json["ImageExportTasks"] = (*user_iets).clone();
+                println!("{:#}", json.dump());
+
+                for i in rm_array {
+                    main_json[user_id]["ImageExportTasks"].array_remove(i);
+                }
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateImageExportTask => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+                let img_id = require_arg!(in_json, "ImageId");
+                match main_json[user_id]["Images"].members().find(|img| img["ImageId"] == img_id) {
+                    Some(_) => {}
+                    _ => return bad_argument(req_id, json, "iprange size is nope")
+                };
+
+                let iet = json::object!{
+                    "Tags": [],
+                    "ImageId": img_id,
+                    "TaskId": "image-export-12345678",
+                    "Comment": "Export of image ami-12345678",
+                    "OsuExport": {
+                        "OsuPrefix": "PREFIX/ami-12345678/",
+                        "OsuBucket": "BUCKET",
+                        "DiskImageFormat": "qcow2"
+                    },
+                    State: "pending/queued",
+                    Progress: 0
+                };
+                main_json[user_id]["ImageExportTasks"].push(iet.clone()).unwrap();
+                json["ImageExportTask"] = iet;
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
             RicCall::CreateImage => {
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
@@ -2707,6 +2771,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::DeleteFlexibleGpu),
             "/CreateImage" | "/api/v1/CreateImage" | "/api/latest/CreateImage" =>
                 Ok(RicCall::CreateImage),
+            "/CreateImageExportTask" | "/api/v1/CreateImageExportTask" | "/api/latest/CreateImageExportTask" =>
+                Ok(RicCall::CreateImageExportTask),
+            "/ReadImageExportTasks" | "/api/v1/ReadImageExportTasks" | "/api/latest/ReadImageExportTasks" =>
+                Ok(RicCall::ReadImageExportTasks),
             "/DeleteImage" | "/api/v1/DeleteImage" | "/api/latest/DeleteImage" =>
                 Ok(RicCall::DeleteImage),
             "/UpdateImage" | "/api/v1/UpdateImage" | "/api/latest/UpdateImage" =>
@@ -3181,7 +3249,7 @@ async fn handler(req: Request<Body>,
         },
         _ => {
             let mut response = Response::new(Body::empty());
-            println!("Unknow call {}", uri.path());
+            println!("404 Unknow call {}", uri.path());
             *response.status_mut() = StatusCode::NOT_FOUND;
             Ok(response)
         }
@@ -3252,7 +3320,8 @@ async fn main() {
             PublicIps: json::JsonValue::new_array(),
             LinkPublicIps: json::JsonValue::new_array(),
             Snapshots: json::JsonValue::new_array(),
-	    ClientGateways: json::JsonValue::new_array()
+	    ClientGateways: json::JsonValue::new_array(),
+            ImageExportTasks: json::JsonValue::new_array(),
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
