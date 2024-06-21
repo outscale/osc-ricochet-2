@@ -820,7 +820,7 @@ impl RicCall {
 
                 let user_iets = &mut main_json[user_id]["ImageExportTasks"];
 
-                for (idx, iet) in user_iets.members_mut().enumerate() {
+                for iet in user_iets.members_mut() {
                     let mut progress: u32 = iet["Progress"].as_u32().unwrap() + 10;
                     if iet["State"] == "pending/queued" {
                         iet["State"] = "pending".into();
@@ -2545,7 +2545,7 @@ impl RicCall {
                 let resources_todo = in_json["ResourceIds"].members().map(|id| {
                     ids.push(id.clone());
                     match id.as_str() {
-                        Some(id) => match id.split_once('-') {
+                        Some(id) => match id.rsplit_once('-') {
                             Some((t, _)) => match t {
                                 "sg" => get_by_id!("SecurityGroups", "SecurityGroupId", id),
                                 "i" => get_by_id!("Vms", "VmId", id),
@@ -2553,6 +2553,7 @@ impl RicCall {
                                 "vol" => get_by_id!("Volumes", "VolumeId", id),
                                 "fgpu" => get_by_id!("FlexibleGpus", "FlexibleGpuId", id),
                                 "vpc" => get_by_id!("Nets", "NetId", id),
+                                "image-export" => get_by_id!("ImageExportTasks", "TaskId", id),
                                 _ => Err(bad_argument(req_id, json.clone(),
                                                       format!("invalide resource id {}", t).as_str()))
                             },
