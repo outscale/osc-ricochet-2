@@ -819,7 +819,6 @@ impl RicCall {
                 }
 
                 let user_iets = &mut main_json[user_id]["ImageExportTasks"];
-                let mut rm_array = vec![];
 
                 for (idx, iet) in user_iets.members_mut().enumerate() {
                     let mut progress: u32 = iet["Progress"].as_u32().unwrap() + 10;
@@ -830,8 +829,6 @@ impl RicCall {
                         progress = 100;
                         if iet["State"] == "pending" {
                             iet["State"] = "completed".into();
-                        } else {
-                            rm_array.push(idx);
                         }
                     }
                     iet["Progress"] = progress.into();
@@ -840,9 +837,6 @@ impl RicCall {
                 json["ImageExportTasks"] = (*user_iets).clone();
                 println!("{:#}", json.dump());
 
-                for i in rm_array {
-                    main_json[user_id]["ImageExportTasks"].array_remove(i);
-                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -858,15 +852,17 @@ impl RicCall {
                     _ => return bad_argument(req_id, json, "iprange size is nope")
                 };
 
+                // {"ImageId":"ami-00000001","OsuExport":{"DiskImageFormat":"qcow2","OsuBucket":"test-image-name-9159339220693928153","OsuManifestUrl":"","OsuPrefix":""}}
+                let osu_export = require_arg!(in_json, "OsuExport");
                 let iet = json::object!{
                     "Tags": [],
-                    "ImageId": img_id,
-                    "TaskId": "image-export-12345678",
-                    "Comment": "Export of image ami-12345678",
+                    "ImageId": img_id.clone(),
+                    "TaskId": format!("image-export-{:08x}", req_id),
+                    "Comment": format!("Export of image {}", img_id),
                     "OsuExport": {
-                        "OsuPrefix": "PREFIX/ami-12345678/",
-                        "OsuBucket": "BUCKET",
-                        "DiskImageFormat": "qcow2"
+                        "OsuPrefix": optional_arg!(osu_export, "OsuPrefix", ""),
+                        "OsuBucket": require_arg!(osu_export, "OsuBucket"),
+                        "DiskImageFormat": require_arg!(osu_export, "DiskImageFormat"),
                     },
                     State: "pending/queued",
                     Progress: 0
@@ -895,7 +891,7 @@ impl RicCall {
 			"0001"
 		    ],
 		    "Tags": [],
-		    "Description": "",
+		    Description: "",
 		    "BlockDeviceMappings": [
 			{
 			    "DeviceName": "/dev/sda1",
@@ -926,6 +922,9 @@ impl RicCall {
 			    println!("{:#}", in_json.dump());
                             if in_json.has_key("ImageName") {
                                 image["ImageName"] = in_json["ImageName"].clone();
+                            }
+                            if in_json.has_key("Description") {
+                                image["Description"] = in_json["Description"].clone();
                             }
                         },
                         Err(_) => {
