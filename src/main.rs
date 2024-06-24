@@ -834,7 +834,27 @@ impl RicCall {
                     iet["Progress"] = progress.into();
                 }
 
-                json["ImageExportTasks"] = (*user_iets).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    let filter = &in_json["Filters"];
+
+                    json["ImageExportTasks"] = json::JsonValue::new_array();
+
+                    for snap in user_iets.members() {
+                        let mut need_add = true;
+
+                        need_add = have_request_filter(filter, snap,
+                                                       "TaskIds",
+                                                       "TaskId", need_add);
+                        if need_add {
+                            json["ImageExportTasks"].push((*snap).clone()).unwrap();
+                        }
+                    }
+
+                } else {
+                    json["ImageExportTasks"] = (*user_iets).clone();
+                }
+
                 println!("{:#}", json.dump());
 
 
