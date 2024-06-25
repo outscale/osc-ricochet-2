@@ -226,6 +226,7 @@ enum RicCall {
     CreateNatService,
     CreateSnapshot,
     CreateImageExportTask,
+    CreateNic,
 
     DeleteNet,
     DeleteSubnet,
@@ -245,6 +246,7 @@ enum RicCall {
     DeleteNatService,
     DeleteSnapshot,
     DeleteImage,
+    DeleteNic,
 
     ReadImageExportTasks,
     ReadAccessKeys,
@@ -272,6 +274,7 @@ enum RicCall {
     ReadSnapshots,
     ReadClientGateways,
     ReadVmTypes,
+    ReadNics,
 
     LinkInternetService,
     LinkRouteTable,
@@ -338,6 +341,31 @@ impl RicCall {
             }
         }
 
+        macro_rules! add_security_group {
+            ($in_json:expr, $req_id:expr, $resource:expr) => {
+                for sg_id in $in_json["SecurityGroupIds"].members() {
+                    let name = match main_json[user_id]["SecurityGroups"].members_mut().find(|sg| *sg_id == sg["SecurityGroupId"]) {
+                        Some(sg) => &sg["SecurityGroupName"],
+                        _ => return bad_argument(req_id, json, format!("can't find SG id {}", sg_id).as_str())
+                    };
+                    $resource["SecurityGroups"].push(json::object!{
+                        "SecurityGroupName": name.clone(),
+                        "SecurityGroupId": sg_id.clone()
+                    }).unwrap();
+                }
+                for sg_name in $in_json["SecurityGroups"].members() {
+                    let id = match main_json[user_id]["SecurityGroups"].members_mut().find(|sg| *sg_name == sg["SecurityGroupName"]) {
+                        Some(sg) => &sg["SecurityGroupId"],
+                        _ => return bad_argument(req_id, json, format!("can't find SG named {}", sg_name).as_str())
+                    };
+                    $resource["SecurityGroups"].push(json::object!{
+                        "SecurityGroupName": sg_name.clone(),
+                        "SecurityGroupId": id.clone()
+                    }).unwrap();
+                }
+            }
+        }
+
         fn resource_types_to_type(types: &str) -> String {
             match types {
                 "Vms" => "vm",
@@ -348,6 +376,24 @@ impl RicCall {
                 "Nets" => "net",
                 _ => "unknow"
             }.into()
+        }
+
+        fn hosts_of_netmask(netmask: u8) -> u32 {
+            2u32.pow((32 - netmask).into())
+        }
+
+        macro_rules! used_ips_of_subnet {
+            ($subnet_id:expr) => {{
+                let mut used_ips = json::array!();
+                for nic in main_json[user_id]["Nics"].members() {
+                    if nic["SubnetId"] == *($subnet_id) {
+                        for pip in nic["PrivateIps"].members() {
+                            used_ips.push(pip["PrivateIp"].clone()).unwrap();
+                        }
+                    }
+                }
+                used_ips
+            }}
         }
 
         macro_rules! get_by_id {
@@ -1038,8 +1084,7 @@ impl RicCall {
                             }
                             net["IpRange"] = iprange.into()
                         },
-                        _ => return bad_argument(req_id, json,
-                                                 "you range is pure &@*$ i meam invalide")
+                        _ => return bad_argument(req_id, json, "you range is pure &@*$ i mean invalid")
                     }
                 } else {
                     return bad_argument(req_id, json, "l'IpRange wesh !");
@@ -2460,6 +2505,7 @@ impl RicCall {
                     "CreationDate": "2022-08-01T13:37:54.356Z",
                     "UserData": "",
                     "PrivateIp": "10.0.00.0",
+                    "SecurityGroups": [],
                     "BsuOptimized": false,
                     "LaunchNumber": 0,
                     "Performance": "high",
@@ -2506,27 +2552,7 @@ impl RicCall {
                     }
                 }
                 if in_json.has_key("SecurityGroupIds") || in_json.has_key("SecurityGroups") {
-                    vm["SecurityGroups"] = json::array![];
-                    for sg_id in in_json["SecurityGroupIds"].members() {
-                        let name = match main_json[user_id]["SecurityGroups"].members_mut().find(|sg| *sg_id == sg["SecurityGroupId"]) {
-                            Some(sg) => &sg["SecurityGroupName"],
-                            _ => return bad_argument(req_id, json, format!("can't find SG id {}", sg_id).as_str())
-                        };
-                        vm["SecurityGroups"].push(json::object!{
-                            "SecurityGroupName": name.clone(),
-                            "SecurityGroupId": sg_id.clone()
-                        }).unwrap();
-                    }
-                    for sg_name in in_json["SecurityGroups"].members() {
-                        let id = match main_json[user_id]["SecurityGroups"].members_mut().find(|sg| *sg_name == sg["SecurityGroupName"]) {
-                            Some(sg) => &sg["SecurityGroupId"],
-                            _ => return bad_argument(req_id, json, format!("can't find SG named {}", sg_name).as_str())
-                        };
-                        vm["SecurityGroups"].push(json::object!{
-                            "SecurityGroupName": sg_name.clone(),
-                            "SecurityGroupId": id.clone()
-                        }).unwrap();
-                    }
+                    add_security_group!(in_json, req_id, vm);
                 } else {
                     vm["SecurityGroups"] = json::array![
                         json::object!{
@@ -2690,6 +2716,131 @@ impl RicCall {
                 println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
                 json["FlexibleGpu"] = fgpu_json.clone();
                 user_fgpu.push(fgpu_json).unwrap();
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateNic => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateNic require v4 signature")
+                }
+                let nic_id = format!("eni-{:08x}", req_id);
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+
+                let subnet_id = require_arg!(in_json, "SubnetId");
+                let subnet = match main_json[user_id]["Subnets"].members_mut().find(|subnet| subnet_id == subnet["SubnetId"]) {
+                    Some(snet) => snet,
+                    _ => return bad_argument(req_id, json, format!("can't find subnet id {}", subnet_id).as_str())
+                };
+
+                let mut nic = json::object!{
+                    SubregionName: get_default_subregion(&cfg),
+                    SubnetId: subnet_id.clone(),
+                    "State": "available",
+                    "IsSourceDestChecked": true,
+                    "PrivateDnsName": "",
+                    "Tags": [],
+                    Description: optional_arg!(in_json, "Description", ""),
+                    AccountId: format!("{:012x}", user_id),
+                    SecurityGroups: [],
+                    "MacAddress": "A1:B2:C3:D4:E5:F6",
+                    "NetId": "",
+                    NicId: nic_id,
+                    PrivateIps: []
+                };
+
+                let subnet_st: Ipv4Net = subnet["IpRange"].as_str().unwrap().parse().unwrap();
+                let mut used_ips = used_ips_of_subnet!(&subnet_id);
+                let mut has_primary_in_req = false;
+                if in_json.has_key("PrivateIps") {
+                    let mut private_ips = json::array!();
+                    for ip_light in in_json["PrivateIps"].members() {
+                        let private_ip = require_arg!(ip_light, "PrivateIp");
+                        let is_primary = optional_arg!(ip_light, "IsPrimary", false);
+                        let private_ip_block = json::object!{
+                            PrivateDnsName: private_ip.clone().as_str().unwrap().to_owned() + ".eu-west-2.compute.internal",
+                            PrivateIp: private_ip.clone(),
+                            IsPrimary: is_primary.clone(),
+                        };
+
+                        if is_primary.as_bool().unwrap() {
+                            if has_primary_in_req {
+                                return bad_argument(req_id, json, "only one private ip can be set primary")
+                            }
+                            has_primary_in_req = true;
+                            nic["PrivateDnsName"] = private_ip_block["PrivateDnsName"].clone();
+                        }
+
+                        let net_st: Result<Ipv4Addr, _> = private_ip.as_str().unwrap().parse();
+                        match net_st {
+                            Ok(range) => {
+                                if !subnet_st.contains(&range) {
+                                    return bad_argument(req_id, json, "private ip is not within the subnet range")
+                                }
+                                if used_ips.len() == usize::try_from(hosts_of_netmask(subnet_st.prefix_len())).unwrap() {
+                                    return bad_argument(req_id, json, "all private ips used for subnet")
+                                }
+                                if used_ips.members().find(|ip| private_ip == **ip).is_some() {
+                                    return bad_argument(req_id, json, "private ip already in use in subnet");
+                                }
+                                if private_ips.members().find(|ip_block| private_ip == ip_block["PrivateIp"]).is_some() {
+                                    return bad_argument(req_id, json, "private ips need to be exclusive");
+                                }
+
+                                private_ips.push(private_ip_block).unwrap();
+                            },
+                            _ => return bad_argument(req_id, json, "you range is pure &@*$ i mean invalid")
+                        }
+                    }
+                    nic["PrivateIps"] = private_ips.clone();
+                }
+                if !has_primary_in_req {
+                    used_ips = used_ips_of_subnet!(&subnet_id);
+                    let mut used_ips_req = json::array!();
+                    for pip in nic["PrivateIps"].members() {
+                        used_ips_req.push(pip["PrivateIp"].clone()).unwrap();
+                    }
+                    let mut hosts = subnet_st.hosts();
+                    let private_ip = match hosts.find(|ip| used_ips.members().find(|used_ip| used_ip.as_str().unwrap() == ip.to_string()).is_none()
+                                                      && used_ips_req.members().find(|used_ip| used_ip.as_str().unwrap() == ip.to_string()).is_none()) {
+                        Some(pip) => pip,
+                        _ => return bad_argument(req_id, json, "all private ips used")
+                    };
+                    let private_ip_block = json::object!{
+                        PrivateDnsName: private_ip.to_string().to_owned() + ".eu-west-2.compute.internal",
+                        PrivateIp: private_ip.to_string(),
+                        IsPrimary: true,
+                    };
+                    nic["PrivateDnsName"] = private_ip_block["PrivateDnsName"].clone();
+                    nic["PrivateIps"].push(private_ip_block).unwrap();
+                }
+                if in_json.has_key("SecurityGroupIds")  {
+                    add_security_group!(in_json, req_id, nic);
+                }
+
+                main_json[user_id]["Nics"].push(nic.clone()).unwrap();
+                json["Nic"] = nic.clone();
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::ReadNics => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadNic require v4 signature")
+                }
+
+                let nics = &main_json[user_id]["Nics"];
+
+                json["Nics"] = (*nics).clone();
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::DeleteNic => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "DeleteNic require v4 signature")
+                }
+                let nics = &mut main_json[user_id]["Nics"];
+                let in_json = require_in_json!(bytes);
+                let nic_id = require_arg!(in_json, "NicId");
+
+                array_remove!(nics, |nic| nic_id == nic["NicId"]);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
         }
@@ -2883,6 +3034,12 @@ impl FromStr for RicCall {
 
             "/DeleteRoute" | "/api/v1/DeleteRoute" | "/api/latest/DeleteRoute" =>
                 Ok(RicCall::DeleteRoute),
+            "/CreateNic" | "/api/v1/CreateNic" | "/api/latest/CreateNic" =>
+                Ok(RicCall::CreateNic),
+            "/ReadNics" | "/api/v1/ReadNics" | "/api/latest/ReadNics" =>
+                Ok(RicCall::ReadNics),
+            "/DeleteNic" | "/api/v1/DeleteNic" | "/api/latest/DeleteNic" =>
+                Ok(RicCall::DeleteNic),
 
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
