@@ -227,6 +227,7 @@ enum RicCall {
     CreateSnapshot,
     CreateImageExportTask,
     CreateNic,
+    CreateNetPeering,
 
     DeleteNet,
     DeleteSubnet,
@@ -275,6 +276,7 @@ enum RicCall {
     ReadClientGateways,
     ReadVmTypes,
     ReadNics,
+    ReadNetPeerings,
 
     LinkInternetService,
     LinkRouteTable,
@@ -293,6 +295,8 @@ enum RicCall {
 
     StartVms,
     StopVms,
+
+    AcceptNetPeering,
 
     // Free Calls
     ReadPublicCatalog,
@@ -2842,6 +2846,153 @@ impl RicCall {
 
                 array_remove!(nics, |nic| nic_id == nic["NicId"]);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::CreateNetPeering => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "CreateNetPeering require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+
+                let accepter_net_id = require_arg!(in_json, "AccepterNetId");
+                let source_net_id = require_arg!(in_json, "SourceNetId");
+
+                if accepter_net_id == source_net_id {
+                    return bad_argument(req_id, json, format!("The provided value '{}' for parameter AccepterNetId is invalid. The values for AccepterNetId and SourceNetId must be different.", accepter_net_id).as_str())
+                }
+
+                let mut net_peering = json::object!{
+                    "Tags": [],
+                    "State": {
+                        "Name": "pending-acceptance"
+                    },
+                    "AccepterNet": {
+                        NetId: accepter_net_id.clone(),
+                        IpRange: "",
+                        AccountId: format!("{:012x}", user_id)
+                    },
+                    "SourceNet": {
+                        NetId: source_net_id.clone(),
+                        IpRange: "",
+                        AccountId: format!("{:012x}", user_id)
+                    },
+                    "NetPeeringId": format!("pcx-{:08x}", req_id)
+                };
+
+                let get_net_i = |net_id: &JsonValue| {
+                    for (user_id, resources) in main_json.members().enumerate() {
+                        if let Some (net) = resources["Nets"].members().find(|net| *net_id == net["NetId"]) {
+                            return Some((user_id, net));
+                        }
+                    }
+                    None
+                };
+                let (accepter_user_id, accepter_net) = match get_net_i(&accepter_net_id) {
+                    Some ((i, net)) => (i, net),
+                    _ => return bad_argument(req_id, json, format!("can't find user linked with accepter net id {}", accepter_net_id).as_str())
+                };
+
+                let (source_user_id, source_net) = match get_net_i(&source_net_id) {
+                    Some ((i, net)) => (i, net),
+                    _ => return bad_argument(req_id, json, format!("can't find user linked with source net id {}", accepter_net_id).as_str())
+                };
+                net_peering["State"]["Message"] = ("Pending acceptance by ".to_owned() + &format!("{:012x}", accepter_user_id)).into();
+                net_peering["AccepterNet"]["IpRange"] = accepter_net["IpRange"].clone();
+                net_peering["AccepterNet"]["AccountId"] = format!("{:012x}", accepter_user_id).into();
+                net_peering["SourceNet"]["IpRange"] = source_net["IpRange"].clone();
+                net_peering["SourceNet"]["AccountId"] = format!("{:012x}", source_user_id).into();
+
+                if main_json[source_user_id]["Vms"].len() == 0 || main_json[accepter_user_id]["Vms"].len() == 0 {
+                    return bad_argument(req_id, json, "Peered Nets must contain at least one virtual machine (VM) each before the creation of the Net peering");
+                }
+                let get_net_peering = |source_net: &str, accepter_net: &str| main_json[source_user_id]["NetPeerings"].members().find(|net_p| source_net_id == net_p[source_net]["NetId"] && accepter_net_id == net_p[accepter_net]["NetId"]);
+                
+                if let Some (existing_net_peering) = get_net_peering("SourceNet", "AccepterNet") {
+                    json["NetPeering"] = existing_net_peering.clone();
+                    return Ok((jsonobj_to_strret(json, req_id), StatusCode::OK));
+                }
+                if let Some (reverse_net_peering) = get_net_peering( "AccepterNet", "SourceNet") {
+                    if reverse_net_peering["State"]["Name"].as_str().unwrap() == "active" {
+                        net_peering["State"]["Name"] = "rejected".into();
+                        net_peering["State"]["Message"] = "Rejected automatically because active reverse link already exists".into();
+                    }
+                }
+
+                let source_net_ip_range: Ipv4Net = source_net["IpRange"].as_str().unwrap().parse().unwrap();
+                let accepter_net_ip_range: Ipv4Net = accepter_net["IpRange"].as_str().unwrap().parse().unwrap();
+                if source_net_ip_range.contains(&accepter_net_ip_range) || accepter_net_ip_range.contains(&source_net_ip_range) {
+                    net_peering["State"]["Name"] = "failed".into();
+                    net_peering["State"]["Message"] = "The two Nets must not have overlapping IP ranges".into();
+                }
+                else {
+                    main_json[source_user_id]["NetPeerings"].push(net_peering.clone()).unwrap();
+                    if source_user_id != accepter_user_id {
+                        main_json[accepter_user_id]["NetPeerings"].push(net_peering.clone()).unwrap();
+                    }
+                }
+                json["NetPeering"] = net_peering.clone();
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::ReadNetPeerings => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "ReadNetPeerings require v4 signature")
+                }
+
+                let net_peerings = &main_json[user_id]["NetPeerings"];
+
+                json["NetPeerings"] = (*net_peerings).clone();
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::AcceptNetPeering => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "AcceptNetPeering require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+
+                let net_peering_id = require_arg!(in_json, "NetPeeringId");
+
+                let is_pending_net_p = |net_p: &JsonValue| {
+                    net_peering_id == net_p["NetPeeringId"]
+                    && &format!("{:012x}", user_id) == net_p["AccepterNet"]["AccountId"].as_str().unwrap()
+                    && net_p["State"]["Name"].as_str().unwrap() == "pending-acceptance"
+                };
+
+                let mut updated = false;
+                let mut existing_net_peering = json::JsonValue::new_object();
+                for resources in main_json.members_mut() {
+                    for net_peering in resources["NetPeerings"].members_mut() {
+                        if is_pending_net_p(net_peering) {
+                            net_peering["State"]["Name"] = "active".into();
+                            net_peering["State"]["Message"] = "Active".into();
+                            if !updated {
+                                json["NetPeering"] = net_peering.clone();
+                                existing_net_peering = net_peering.clone();
+                                updated = true;
+                            }
+                        }
+                    }
+                }
+                if !updated {
+                    return bad_argument(req_id, json, "can't find a net peering pending-acceptance");
+                }
+
+                let is_reverse_net_p = |net_p: &JsonValue| {
+                    net_p["AccepterNet"] == existing_net_peering["SourceNet"]
+                    && net_p["SourceNet"] == existing_net_peering["AccepterNet"]
+                    && net_p["State"]["Name"].as_str().unwrap() == "pending-acceptance"
+                };
+
+                for resources in main_json.members_mut() {
+                    for net_peering in resources["NetPeerings"].members_mut() {
+                        if is_reverse_net_p(net_peering) {
+                            net_peering["State"]["Name"] = "rejected".into();
+                            net_peering["State"]["Message"] = "Rejected automatically because active reverse link already exists".into();
+                        }
+                    }
+                }
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
         }
     }
@@ -3040,6 +3191,12 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadNics),
             "/DeleteNic" | "/api/v1/DeleteNic" | "/api/latest/DeleteNic" =>
                 Ok(RicCall::DeleteNic),
+            "/CreateNetPeering" | "/api/v1/CreateNetPeering" | "/api/latest/CreateNetPeering" =>
+                Ok(RicCall::CreateNetPeering),
+            "/ReadNetPeerings" | "/api/v1/ReadNetPeerings" | "/api/latest/ReadNetPeerings" =>
+                Ok(RicCall::ReadNetPeerings),
+            "/AcceptNetPeering" | "/api/v1/AcceptNetPeering" | "/api/latest/AcceptNetPeering" =>
+                Ok(RicCall::AcceptNetPeering),
 
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
@@ -3499,6 +3656,7 @@ async fn main() {
             Snapshots: json::JsonValue::new_array(),
 	    ClientGateways: json::JsonValue::new_array(),
             ImageExportTasks: json::JsonValue::new_array(),
+            NetPeerings: json::JsonValue::new_array(),
         }).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
