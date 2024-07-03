@@ -2858,28 +2858,9 @@ impl RicCall {
 
                 let accepter_net_id = require_arg!(in_json, "AccepterNetId");
                 let source_net_id = require_arg!(in_json, "SourceNetId");
-
                 if accepter_net_id == source_net_id {
                     return bad_argument(req_id, json, format!("The provided value '{}' for parameter AccepterNetId is invalid. The values for AccepterNetId and SourceNetId must be different.", accepter_net_id).as_str())
                 }
-
-                let mut net_peering = json::object!{
-                    "Tags": [],
-                    "State": {
-                        "Name": "pending-acceptance"
-                    },
-                    "AccepterNet": {
-                        NetId: accepter_net_id.clone(),
-                        IpRange: "",
-                        AccountId: format!("{:012x}", user_id)
-                    },
-                    "SourceNet": {
-                        NetId: source_net_id.clone(),
-                        IpRange: "",
-                        AccountId: format!("{:012x}", user_id)
-                    },
-                    "NetPeeringId": format!("pcx-{:08x}", req_id)
-                };
 
                 let get_net_i = |net_id: &JsonValue| {
                     for (user_id, resources) in main_json.members().enumerate() {
@@ -2893,7 +2874,6 @@ impl RicCall {
                     Some ((i, net)) => (i, net),
                     _ => return bad_argument(req_id, json, format!("can't find user linked with accepter net id {}", accepter_net_id).as_str())
                 };
-
                 let (source_user_id, source_net) = match get_net_i(&source_net_id) {
                     Some ((i, net)) => (i, net),
                     _ => return bad_argument(req_id, json, format!("can't find user linked with source net id {}", accepter_net_id).as_str())
@@ -2902,11 +2882,24 @@ impl RicCall {
                     return bad_argument(req_id, json, format!("the source net id {} needs to be your own", accepter_net_id).as_str())
                 }
                 
-                net_peering["State"]["Message"] = ("Pending acceptance by ".to_owned() + &format!("{:012x}", accepter_user_id)).into();
-                net_peering["AccepterNet"]["IpRange"] = accepter_net["IpRange"].clone();
-                net_peering["AccepterNet"]["AccountId"] = format!("{:012x}", accepter_user_id).into();
-                net_peering["SourceNet"]["IpRange"] = source_net["IpRange"].clone();
-                net_peering["SourceNet"]["AccountId"] = format!("{:012x}", source_user_id).into();
+                let mut net_peering = json::object!{
+                    "Tags": [],
+                    "State": {
+                        Message: "Pending acceptance by ".to_owned() + &format!("{:012x}", accepter_user_id),
+                        "Name": "pending-acceptance"
+                    },
+                    "AccepterNet": {
+                        NetId: accepter_net_id.clone(),
+                        IpRange: accepter_net["IpRange"].clone(),
+                        AccountId: format!("{:012x}", accepter_user_id)
+                    },
+                    "SourceNet": {
+                        NetId: source_net_id.clone(),
+                        IpRange: source_net["IpRange"].clone(),
+                        AccountId: format!("{:012x}", source_user_id)
+                    },
+                    "NetPeeringId": format!("pcx-{:08x}", req_id)
+                };
 
                 if main_json[source_user_id]["Vms"].len() == 0 || main_json[accepter_user_id]["Vms"].len() == 0 {
                     return bad_argument(req_id, json, "Peered Nets must contain at least one virtual machine (VM) each before the creation of the Net peering");
