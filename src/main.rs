@@ -2876,10 +2876,10 @@ impl RicCall {
                 };
                 let (source_user_id, source_net) = match get_net_i(&source_net_id) {
                     Some ((i, net)) => (i, net),
-                    _ => return bad_argument(req_id, json, format!("can't find user linked with source net id {}", accepter_net_id).as_str())
+                    _ => return bad_argument(req_id, json, format!("can't find user linked with source net id {}", source_net_id).as_str())
                 };
                 if source_user_id != user_id {
-                    return bad_argument(req_id, json, format!("the source net id {} needs to be your own", accepter_net_id).as_str())
+                    return bad_argument(req_id, json, format!("the source net id {} needs to be your own", source_net_id).as_str())
                 }
                 
                 let mut net_peering = json::object!{
