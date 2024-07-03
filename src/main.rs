@@ -248,6 +248,7 @@ enum RicCall {
     DeleteSnapshot,
     DeleteImage,
     DeleteNic,
+    DeleteNetPeering,
 
     ReadImageExportTasks,
     ReadAccessKeys,
@@ -297,6 +298,7 @@ enum RicCall {
     StopVms,
 
     AcceptNetPeering,
+    RejectNetPeering,
 
     // Free Calls
     ReadPublicCatalog,
@@ -2848,6 +2850,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateNetPeering => {
+                // TODO Source Net needs to be user ownership
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateNetPeering require v4 signature")
                 }
@@ -2992,6 +2995,57 @@ impl RicCall {
                     }
                 }
 
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::RejectNetPeering => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "AcceptNetPeering require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+
+                let net_peering_id = require_arg!(in_json, "NetPeeringId");
+
+                let net_peering = match main_json[user_id]["NetPeerings"].members_mut().find(|net_p| 
+                    net_p["NetPeeringId"] == net_peering_id && net_p["State"]["Name"] == "pending-acceptance") 
+                {
+                    Some(net_p) => net_p,
+                    None => return bad_argument(req_id, json, format!("can't find the net peering {} in pending-acceptance state", net_peering_id).as_str())
+                };
+                net_peering["State"]["Name"] = "rejected".into();
+                net_peering["State"]["Message"] = "Rejected by user".into();
+
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+            RicCall::DeleteNetPeering => {
+                if auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, "AcceptNetPeering require v4 signature")
+                }
+                let in_json = require_in_json!(bytes);
+                println!("{:#}", in_json.dump());
+
+                let net_peering_id = require_arg!(in_json, "NetPeeringId");
+                let is_request_owner = |net_peering: &JsonValue| net_peering["SourceNet"]["AccountId"].as_str().unwrap() == &format!("{:012x}", user_id);
+                let is_peer_net_owner = |net_peering: &JsonValue| net_peering["AccepterNet"]["AccountId"].as_str().unwrap() == &format!("{:012x}", user_id);
+
+                let mut deleted = false;
+                for resources in main_json.members_mut() {
+                    if resources["NetPeerings"].members().any(|net_peering| {
+                        net_peering_id == net_peering["NetPeeringId"] && 
+                        (match net_peering["State"]["Name"].as_str().unwrap() {
+                            "pending-acceptance" => is_request_owner(net_peering),
+                            "active"  => is_request_owner(net_peering) || is_peer_net_owner(net_peering),
+                            _ => false
+                        })
+                    }) {
+                        array_remove!(resources["NetPeerings"], |net_peering| net_peering_id == net_peering["NetPeeringId"]);
+                        deleted = true;
+                    }
+                }
+                if !deleted {
+                    return bad_argument(req_id, json, format!("cannot delete the net peering {}", net_peering_id).as_str())
+                }
+ 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
         }
@@ -3197,6 +3251,10 @@ impl FromStr for RicCall {
                 Ok(RicCall::ReadNetPeerings),
             "/AcceptNetPeering" | "/api/v1/AcceptNetPeering" | "/api/latest/AcceptNetPeering" =>
                 Ok(RicCall::AcceptNetPeering),
+            "/RejectNetPeering" | "/api/v1/RejectNetPeering" | "/api/latest/RejectNetPeering" =>
+                Ok(RicCall::RejectNetPeering),
+            "/DeleteNetPeering" | "/api/v1/DeleteNetPeering" | "/api/latest/DeleteNetPeering" =>
+                Ok(RicCall::DeleteNetPeering),
 
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
