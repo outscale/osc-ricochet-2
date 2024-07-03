@@ -2850,7 +2850,6 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateNetPeering => {
-                // TODO Source Net needs to be user ownership
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "CreateNetPeering require v4 signature")
                 }
@@ -2899,6 +2898,10 @@ impl RicCall {
                     Some ((i, net)) => (i, net),
                     _ => return bad_argument(req_id, json, format!("can't find user linked with source net id {}", accepter_net_id).as_str())
                 };
+                if source_user_id != user_id {
+                    return bad_argument(req_id, json, format!("the source net id {} needs to be your own", accepter_net_id).as_str())
+                }
+                
                 net_peering["State"]["Message"] = ("Pending acceptance by ".to_owned() + &format!("{:012x}", accepter_user_id)).into();
                 net_peering["AccepterNet"]["IpRange"] = accepter_net["IpRange"].clone();
                 net_peering["AccepterNet"]["AccountId"] = format!("{:012x}", accepter_user_id).into();
