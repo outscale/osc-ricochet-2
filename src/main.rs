@@ -1345,15 +1345,50 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkRouteTable => {
-                /* Still todo */
-                json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
                 let in_json = require_in_json!(bytes);
-                json["LinkRouteTableId"] = require_arg!(in_json, "RouteTableId");
+                let route_table_id = require_arg!(in_json, "RouteTableId");
+                let subnet_id = require_arg!(in_json, "SubnetId");
+
+                let subnet_net_id = match get_by_id!("Subnets", "SubnetId", subnet_id) {
+                    Ok((_, idx)) => &main_json[user_id]["Subnets"][idx]["NetId"].clone(),
+                    _ => return bad_argument(req_id, json, "Subnet not found")
+                };
+                let route_table = match get_by_id!("RouteTables", "RouteTableId", route_table_id) {
+                    Ok((_, idx)) => &mut main_json[user_id]["RouteTables"][idx],
+                    _ => return bad_argument(req_id, json, "Route Table not found")
+                };
+                if *subnet_net_id != route_table["NetId"] {
+                    return bad_argument(req_id, json, "The Subnet and the route table must be in the same Net.")
+                }
+                let link_route_table = json::object!{
+		            "Main": route_table["LinkRouteTables"].len() == 0,
+                    "LinkRouteTableId": format!("rtbassoc-{:08x}", req_id),
+                    "RouteTableId": route_table["RouteTableId"].clone(),
+                    "NetId": (*subnet_net_id).clone()
+                };
+
+                route_table["LinkRouteTables"].push(link_route_table.clone()).unwrap();
+                json["LinkRouteTableId"] = link_route_table["LinkRouteTableId"].clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkRouteTable => {
-                /* Still todo */
-                json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
+                let in_json = require_in_json!(bytes);
+                let link_route_table_id = require_arg!(in_json, "LinkRouteTableId");
+
+                let get_rt_link_idx = || -> Option<(usize, usize)> {
+                    for (route_table_idx, route_table) in main_json[user_id]["RouteTables"].members().enumerate() {
+                        if let Some(link_route_table_idx) = route_table["LinkRouteTables"].members().position(|link| link["LinkRouteTableId"] == link_route_table_id) {
+                            return Some((route_table_idx, link_route_table_idx));
+                        }
+                    }
+                    None
+                };
+                let (route_table_idx, link_route_table_idx) = match get_rt_link_idx() {
+                    Some((rt_idx, lrt_idx)) => (rt_idx, lrt_idx),
+                    None => return bad_argument(req_id, json, format!("can't find the link route table {}", link_route_table_id).as_str())              
+                };
+
+                main_json[user_id]["RouteTables"][route_table_idx]["LinkRouteTables"].array_remove(link_route_table_idx);
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
 
