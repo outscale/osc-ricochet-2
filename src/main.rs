@@ -2884,21 +2884,21 @@ impl RicCall {
                 
                 let mut net_peering = json::object!{
                     "Tags": [],
-                    "State": {
+                    State: {
                         Message: "Pending acceptance by ".to_owned() + &format!("{:012x}", accepter_user_id),
                         "Name": "pending-acceptance"
                     },
-                    "AccepterNet": {
+                    AccepterNet: {
                         NetId: accepter_net_id.clone(),
                         IpRange: accepter_net["IpRange"].clone(),
                         AccountId: format!("{:012x}", accepter_user_id)
                     },
-                    "SourceNet": {
+                    SourceNet: {
                         NetId: source_net_id.clone(),
                         IpRange: source_net["IpRange"].clone(),
                         AccountId: format!("{:012x}", source_user_id)
                     },
-                    "NetPeeringId": format!("pcx-{:08x}", req_id)
+                    NetPeeringId: format!("pcx-{:08x}", req_id)
                 };
 
                 if main_json[source_user_id]["Vms"].len() == 0 || main_json[accepter_user_id]["Vms"].len() == 0 {
@@ -2919,6 +2919,7 @@ impl RicCall {
 
                 let source_net_ip_range: Ipv4Net = source_net["IpRange"].as_str().unwrap().parse().unwrap();
                 let accepter_net_ip_range: Ipv4Net = accepter_net["IpRange"].as_str().unwrap().parse().unwrap();
+                // When a net_peering failed, the result is sent back but not stored
                 if source_net_ip_range.contains(&accepter_net_ip_range) || accepter_net_ip_range.contains(&source_net_ip_range) {
                     net_peering["State"]["Name"] = "failed".into();
                     net_peering["State"]["Message"] = "The two Nets must not have overlapping IP ranges".into();
