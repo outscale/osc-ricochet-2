@@ -844,11 +844,39 @@ impl RicCall {
 		    if  ptl.has_key("Additions") {
 			let addition = &ptl["Additions"];
 
-			image["PermissionsToLaunch"] = addition.clone();
+                        if addition["GlobalPermission"] == true {
+                            image["PermissionsToLaunch"]["GlobalPermission"] = true.into();
+                        }
+                        if addition.has_key("AccountIds") {
+                            for aid in addition["AccountIds"].members() {
+                                match image["PermissionsToLaunch"]["AccountIds"].members().
+                                    find(|id| aid == *id) {
+                                        Some(_) => {},
+                                        _ => image["PermissionsToLaunch"]["AccountIds"].push(aid.clone()).unwrap()
+                                }
+                            }
+                        }
 		    }
+
+                    if ptl.has_key("Removals") {
+                        let removal = &ptl["Removals"];
+
+                        if removal["GlobalPermission"] == false {
+                            image["PermissionsToLaunch"]["GlobalPermission"] = false.into();
+                        }
+                        if removal.has_key("AccountIds") {
+                            for aid in removal["AccountIds"].members() {
+                                if let Some((idx, _)) = image["PermissionsToLaunch"]["AccountIds"].members().enumerate().
+                                                                    find(|(_, id)| aid == *id) {
+                                    image["PermissionsToLaunch"]["AccountIds"].array_remove(idx);
+                                }
+                            }
+                        }
+                    }
                 }
 
 
+                println!("{:#}", image.dump());
 		json["Image"] = image.clone();
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
