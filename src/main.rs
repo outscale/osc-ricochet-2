@@ -1755,18 +1755,18 @@ impl RicCall {
                             City:"カカリコ",
                             CompanyName: "plouf",
                             Country: "ハイラル",
-                            CustomerId: user_id,
+                            CustomerId: format!("{:012x}", user_id),
                             Email: match email.is_null() {
-                                true => "RICOCHET_UNKNOW.???",
+                                true => "RICOCHET_UNKNOW.com",
                                 _ => email.as_str().unwrap()
                             },
                             FirstName: "oui",
-                            JobTitle: "bu__3hit",
+                            JobTitle: "oui",
                             LastName: "non",
-                            MobileNumber: "06 > 07",
-                            PhoneNumber: "011 8 999 881 99 911 9 725...3",
+                            MobileNumber: "+336 01 02 03 04",
+                            PhoneNumber: "011 8 999 881 99 911 9 725 3",
                             StateProvince: "ok",
-                            VatNumber: "the fuck ?",
+                            VatNumber: "009",
                             ZipCode: "5"
                     }];
 
