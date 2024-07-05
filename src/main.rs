@@ -3112,6 +3112,18 @@ impl RicCall {
     }
 }
 
+macro_rules! catch_ric_calls {
+    ( $p:expr, $( $call:ident ),* ) => {
+        match $p {
+            "/" => Ok(RicCall::Root),
+            $(
+                concat!("/", stringify!($call)) | concat!("/api/v1/", stringify!($call)) | concat!("/api/latest/", stringify!($call)) => Ok(RicCall::$call),
+            )*
+            "/debug" => Ok(RicCall::Debug),
+            _ => Err(())
+        }
+    };
+}
 
 impl FromStr for RicCall {
     type Err = ();
@@ -3121,204 +3133,98 @@ impl FromStr for RicCall {
         let p = ps.as_str();
 
         println!("{}", p);
-        match p {
-            "/" => Ok(RicCall::Root),
-            "/CreateKeypair" | "/api/v1/CreateKeypair" | "/api/latest/CreateKeypair" =>
-                Ok(RicCall::CreateKeypair),
-            "/ReadKeypairs" | "/api/v1/ReadKeypairs" | "/api/latest/ReadKeypairs" =>
-                Ok(RicCall::ReadKeypairs),
-            "/ReadAdminPassword" | "/api/v1/ReadAdminPassword" | "/api/latest/ReadAdminPassword" =>
-                Ok(RicCall::ReadAdminPassword),
-            "/DeleteKeypair" | "/api/v1/DeleteKeypair" | "/api/latest/DeleteKeypair" =>
-                Ok(RicCall::DeleteKeypair),
-            "/ReadAccessKeys" | "/api/v1/ReadAccessKeys" | "/api/latest/ReadAccessKeys" =>
-                Ok(RicCall::ReadAccessKeys),
-            "/ReadVms" | "/api/v1/ReadVms" | "/api/latest/ReadVms" =>
-                Ok(RicCall::ReadVms),
-            "/CreateVms" | "/api/v1/CreateVms" | "/api/latest/CreateVms" =>
-                Ok(RicCall::CreateVms),
-            "/CreateSecurityGroup" | "/api/v1/CreateSecurityGroup" | "/api/latest/CreateSecurityGroup" =>
-                Ok(RicCall::CreateSecurityGroup),
-            "/CreateSecurityGroupRule" | "/api/v1/CreateSecurityGroupRule" | "/api/latest/CreateSecurityGroupRule" =>
-                Ok(RicCall::CreateSecurityGroupRule),
-            "/CreateDirectLink" | "/api/v1/CreateDirectLink" | "/api/latest/CreateDirectLink" =>
-                Ok(RicCall::CreateDirectLink),
-            "/CreateInternetService" | "/api/v1/CreateInternetService" | "/api/latest/CreateInternetService" =>
-                Ok(RicCall::CreateInternetService),
-
-            "/ReadVmTypes" | "/api/v1/ReadVmTypes" | "/api/latest/ReadVmTypes" =>
-                Ok(RicCall::ReadVmTypes),
-
-            "/ReadClientGateways" | "/api/v1/ReadClientGateways" | "/api/latest/ReadClientGateways" =>
-                Ok(RicCall::ReadClientGateways),
-
-            "/LinkInternetService" | "/api/v1/LinkInternetService" | "/api/latest/LinkInternetService" =>
-                Ok(RicCall::LinkInternetService),
-            "/UnlinkInternetService" | "/api/v1/UnlinkInternetService" | "/api/latest/UnlinkInternetService" =>
-                Ok(RicCall::UnlinkInternetService),
-            "/LinkPublicIp" | "/api/v1/LinkPublicIp" | "/api/latest/LinkPublicIp" =>
-                Ok(RicCall::LinkPublicIp),
-            "/UnlinkPublicIp" | "/api/v1/UnlinkPublicIp" | "/api/latest/UnlinkPublicIp" =>
-                Ok(RicCall::UnlinkPublicIp),
-
-            "/LinkFlexibleGpu" | "/api/v1/LinkFlexibleGpu" | "/api/latest/LinkFlexibleGpu" =>
-                Ok(RicCall::LinkFlexibleGpu),
-
-            "/UnlinkFlexibleGpu" | "/api/v1/UnlinkFlexibleGpu" | "/api/latest/UnlinkFlexibleGpu" =>
-                Ok(RicCall::UnlinkFlexibleGpu),
-
-            "/CreatePublicIp" | "/api/v1/CreatePublicIp" | "/api/latest/CreatePublicIp" =>
-                Ok(RicCall::CreatePublicIp),
-
-
-            "/DeleteInternetService" | "/api/v1/DeleteInternetService" | "/api/latest/DeleteInternetService" =>
-                Ok(RicCall::DeleteInternetService),
-            "/DeletePublicIp" | "/api/v1/DeletePublicIp" | "/api/latest/DeletePublicIp" =>
-                Ok(RicCall::DeletePublicIp),
-            "/DeleteVms" | "/api/v1/DeleteVms" | "/api/latest/DeleteVms" =>
-                Ok(RicCall::DeleteVms),
-            "/StopVms" | "/api/v1/StopVms" | "/api/latest/StopVms" =>
-                Ok(RicCall::StopVms),
-            "/StartVms" | "/api/v1/StartVms" | "/api/latest/StartVms" =>
-                Ok(RicCall::StartVms),
-            "/DeleteLoadBalancer" | "/api/v1/DeleteLoadBalancer" | "/api/latest/DeleteLoadBalancer" =>
-                Ok(RicCall::DeleteLoadBalancer),
-            "/DeleteDirectLink" | "/api/v1/DeleteDirectLink" | "/api/latest/DeleteDirectLink" =>
-                Ok(RicCall::DeleteDirectLink),
-            "/DeleteSecurityGroup" | "/api/v1/DeleteSecurityGroup" | "/api/latest/DeleteSecurityGroup" =>
-                Ok(RicCall::DeleteSecurityGroup),
-            "/DeleteSecurityGroupRule" | "/api/v1/DeleteSecurityGroupRule" | "/api/latest/DeleteSecurityGroupRule" =>
-                Ok(RicCall::DeleteSecurityGroupRule),
-
-            "/DeleteTags" | "/api/v1/DeleteTags" | "/api/latest/DeleteTags" =>
-                Ok(RicCall::DeleteTags),
-
-            "/ReadFlexibleGpus" |"/api/v1/ReadFlexibleGpus" | "/api/latest/ReadFlexibleGpus" =>
-                Ok(RicCall::ReadFlexibleGpus),
-            "/ReadConsumptionAccount" |"/api/v1/ReadConsumptionAccount" | "/api/latest/ReadConsumptionAccount" =>
-                Ok(RicCall::ReadConsumptionAccount),
-            "/CreateTags" | "/api/v1/CreateTags" | "/api/latest/CreateTags" =>
-                Ok(RicCall::CreateTags),
-            "/ReadTags" | "/api/v1/ReadTags" | "/api/latest/ReadTags" =>
-                Ok(RicCall::ReadTags),
-            "/CreateFlexibleGpu" | "/api/v1/CreateFlexibleGpu" | "/api/latest/CreateFlexibleGpu" =>
-                Ok(RicCall::CreateFlexibleGpu),
-            "/DeleteFlexibleGpu" | "/api/v1/DeleteFlexibleGpu" | "/api/latest/DeleteFlexibleGpu" =>
-                Ok(RicCall::DeleteFlexibleGpu),
-            "/CreateImage" | "/api/v1/CreateImage" | "/api/latest/CreateImage" =>
-                Ok(RicCall::CreateImage),
-            "/CreateImageExportTask" | "/api/v1/CreateImageExportTask" | "/api/latest/CreateImageExportTask" =>
-                Ok(RicCall::CreateImageExportTask),
-            "/ReadImageExportTasks" | "/api/v1/ReadImageExportTasks" | "/api/latest/ReadImageExportTasks" =>
-                Ok(RicCall::ReadImageExportTasks),
-            "/DeleteImage" | "/api/v1/DeleteImage" | "/api/latest/DeleteImage" =>
-                Ok(RicCall::DeleteImage),
-            "/UpdateImage" | "/api/v1/UpdateImage" | "/api/latest/UpdateImage" =>
-                Ok(RicCall::UpdateImage),
-            "/CreateLoadBalancer" | "/api/v1/CreateLoadBalancer" | "/api/latest/CreateLoadBalancer" =>
-                Ok(RicCall::CreateLoadBalancer),
-            "/ReadAccounts" | "/api/v1/ReadAccounts" | "/api/latest/ReadAccounts" =>
-                Ok(RicCall::ReadAccounts),
-            "/ReadImages" | "/api/v1/ReadImages" | "/api/latest/ReadImages" =>
-                Ok(RicCall::ReadImages),
-            "/ReadDirectLinks" | "/api/v1/ReadDirectLinks" | "/api/latest/ReadDirectLinks" =>
-                Ok(RicCall::ReadDirectLinks),
-            "/ReadSecurityGroups" | "/api/v1/ReadSecurityGroups" | "/api/latest/ReadSecurityGroups" =>
-                Ok(RicCall::ReadSecurityGroups),
-            "/ReadVolumes" | "/api/v1/ReadVolumes" | "/api/latest/ReadVolumes" =>
-                Ok(RicCall::ReadVolumes),
-            "/CreateVolume" | "/api/v1/CreateVolume" | "/api/latest/CreateVolume" =>
-                Ok(RicCall::CreateVolume),
-            "/DeleteVolume" | "/api/v1/DeleteVolume" | "/api/latest/DeleteVolume" =>
-                Ok(RicCall::DeleteVolume),
-            "/ReadLoadBalancers" | "/api/v1/ReadLoadBalancers" | "/api/latest/ReadLoadBalancers" =>
-                Ok(RicCall::ReadLoadBalancers),
-            "/ReadApiAccessPolicy" | "/api/v1/ReadApiAccessPolicy" | "/api/latest/ReadApiAccessPolicy" =>
-                Ok(RicCall::ReadApiAccessPolicy),
-            "/ReadPublicCatalog" | "/api/v1/ReadPublicCatalog" | "/api/latest/ReadPublicCatalog" =>
-                Ok(RicCall::ReadPublicCatalog),
-            "/ReadRegions" | "/api/v1/ReadRegions" | "/api/latest/ReadRegions" =>
-                Ok(RicCall::ReadRegions),
-            "/ReadSubregions" | "/api/v1/ReadSubregions" | "/api/latest/ReadSubregions" =>
-                Ok(RicCall::ReadSubregions),
-            "/ReadPublicIpRanges" | "/api/v1/ReadPublicIpRanges" | "/api/latest/ReadPublicIpRanges" =>
-                Ok(RicCall::ReadPublicIpRanges),
-            "/ReadQuotas" | "/api/v1/ReadQuotas" | "/api/latest/ReadQuotas" =>
-                Ok(RicCall::ReadQuotas),
-            "/ReadNets" | "/api/v1/ReadNets" | "/api/latest/ReadNets" =>
-                Ok(RicCall::ReadNets),
-            "/ReadInternetServices" | "/api/v1/ReadInternetServices" | "/api/latest/ReadInternetServices" =>
-                Ok(RicCall::ReadInternetServices),
-            "/ReadPublicIps" | "/api/v1/ReadPublicIps" | "/api/latest/ReadPublicIps" =>
-                Ok(RicCall::ReadPublicIps),
-            "/ReadLinkPublicIps" | "/api/v1/ReadLinkPublicIps" | "/api/latest/ReadLinkPublicIps" =>
-                Ok(RicCall::ReadLinkPublicIps),
-            "/CreateNet" | "/api/v1/CreateNet" | "/api/latest/CreateNet" =>
-                Ok(RicCall::CreateNet),
-            "/DeleteNet" | "/api/v1/DeleteNet" | "/api/latest/DeleteNet" =>
-                Ok(RicCall::DeleteNet),
-            "/DeleteSubnet" | "/api/v1/DeleteSubnet" | "/api/latest/DeleteSubnet" =>
-                Ok(RicCall::DeleteSubnet),
-            "/CreateSubnet" | "/api/v1/CreateSubnet" | "/api/latest/CreateSubnet" =>
-                Ok(RicCall::CreateSubnet),
-            "/ReadSubnets" | "/api/v1/ReadSubnets" | "/api/latest/ReadSubnets" =>
-                Ok(RicCall::ReadSubnets),
-
-            "/CreateSnapshot" | "/api/v1/CreateSnapshot" | "/api/latest/CreateSnapshot" =>
-                Ok(RicCall::CreateSnapshot),
-            "/ReadSnapshots" | "/api/v1/ReadSnapshots" | "/api/latest/ReadSnapshots" =>
-                Ok(RicCall::ReadSnapshots),
-            "/DeleteSnapshot" | "/api/v1/DeleteSnapshot" | "/api/latest/DeleteSnapshot" =>
-                Ok(RicCall::DeleteSnapshot),
-
-            "/CreateNatService" | "/api/v1/CreateNatService" | "/api/latest/CreateNatService" =>
-                Ok(RicCall::CreateNatService),
-            "/ReadNatServices" | "/api/v1/ReadNatServices" | "/api/latest/ReadNatServices" =>
-                Ok(RicCall::ReadNatServices),
-            "/DeleteNatService" | "/api/v1/DeleteNatService" | "/api/latest/DeleteNatService" =>
-                Ok(RicCall::DeleteNatService),
-            "/CreateRouteTable" | "/api/v1/CreateRouteTable" | "/api/latest/CreateRouteTable" =>
-                Ok(RicCall::CreateRouteTable),
-            "/DeleteRouteTable" | "/api/v1/DeleteRouteTable" | "/api/latest/DeleteRouteTable" =>
-                Ok(RicCall::DeleteRouteTable),
-            "/LinkRouteTable" | "/api/v1/LinkRouteTable" | "/api/latest/LinkRouteTable" =>
-                Ok(RicCall::LinkRouteTable),
-            "/LinkVolume" | "/api/v1/LinkVolume" | "/api/latest/LinkVolume" =>
-                Ok(RicCall::LinkVolume),
-            "/UnlinkVolume" | "/api/v1/UnlinkVolume" | "/api/latest/UnlinkVolume" =>
-                Ok(RicCall::UnlinkVolume),
-            "/UnlinkRouteTable" | "/api/v1/UnlinkRouteTable" | "/api/latest/UnlinkRouteTable" =>
-                Ok(RicCall::UnlinkRouteTable),
-            "/ReadRouteTables" | "/api/v1/ReadRouteTables" | "/api/latest/ReadRouteTables" =>
-                Ok(RicCall::ReadRouteTables),
-            "/CreateRoute" | "/api/v1/CreateRoute" | "/api/latest/CreateRoute" =>
-                Ok(RicCall::CreateRoute),
-
-            "/UpdateVm" | "/api/v1/UpdateVm" | "/api/latest/UpdateVm" =>
-                Ok(RicCall::UpdateVm),
-
-            "/DeleteRoute" | "/api/v1/DeleteRoute" | "/api/latest/DeleteRoute" =>
-                Ok(RicCall::DeleteRoute),
-            "/CreateNic" | "/api/v1/CreateNic" | "/api/latest/CreateNic" =>
-                Ok(RicCall::CreateNic),
-            "/ReadNics" | "/api/v1/ReadNics" | "/api/latest/ReadNics" =>
-                Ok(RicCall::ReadNics),
-            "/DeleteNic" | "/api/v1/DeleteNic" | "/api/latest/DeleteNic" =>
-                Ok(RicCall::DeleteNic),
-            "/CreateNetPeering" | "/api/v1/CreateNetPeering" | "/api/latest/CreateNetPeering" =>
-                Ok(RicCall::CreateNetPeering),
-            "/ReadNetPeerings" | "/api/v1/ReadNetPeerings" | "/api/latest/ReadNetPeerings" =>
-                Ok(RicCall::ReadNetPeerings),
-            "/AcceptNetPeering" | "/api/v1/AcceptNetPeering" | "/api/latest/AcceptNetPeering" =>
-                Ok(RicCall::AcceptNetPeering),
-            "/RejectNetPeering" | "/api/v1/RejectNetPeering" | "/api/latest/RejectNetPeering" =>
-                Ok(RicCall::RejectNetPeering),
-            "/DeleteNetPeering" | "/api/v1/DeleteNetPeering" | "/api/latest/DeleteNetPeering" =>
-                Ok(RicCall::DeleteNetPeering),
-
-            "/debug" => Ok(RicCall::Debug),
-            _ => Err(())
-        }
+        catch_ric_calls!(
+            p,
+            CreateNet,
+            CreateKeypair,
+            CreateVms,
+            CreateTags,
+            CreateFlexibleGpu,
+            CreateImage,
+            CreateVolume,
+            CreateLoadBalancer,
+            CreateSecurityGroup,
+            CreateSecurityGroupRule,
+            CreateDirectLink,
+            CreateInternetService,
+            CreatePublicIp,
+            CreateSubnet,
+            CreateRouteTable,
+            CreateRoute,
+            CreateNatService,
+            CreateSnapshot,
+            CreateImageExportTask,
+            CreateNic,
+            CreateNetPeering,
+            DeleteNet,
+            DeleteSubnet,
+            DeleteKeypair,
+            DeleteLoadBalancer,
+            DeleteVms,
+            DeleteTags,
+            DeleteSecurityGroup,
+            DeleteSecurityGroupRule,
+            DeleteFlexibleGpu,
+            DeleteDirectLink,
+            DeleteInternetService,
+            DeletePublicIp,
+            DeleteRouteTable,
+            DeleteRoute,
+            DeleteVolume,
+            DeleteNatService,
+            DeleteSnapshot,
+            DeleteImage,
+            DeleteNic,
+            DeleteNetPeering,
+            ReadImageExportTasks,
+            ReadAccessKeys,
+            ReadAccounts,
+            ReadFlexibleGpus,
+            ReadConsumptionAccount,
+            ReadImages,
+            ReadDirectLinks,
+            ReadKeypairs,
+            ReadNets,
+            ReadLoadBalancers,
+            ReadVms,
+            ReadVolumes,
+            ReadQuotas,
+            ReadSecurityGroups,
+            ReadApiAccessPolicy,
+            ReadInternetServices,
+            ReadLinkPublicIps,
+            ReadPublicIps,
+            ReadRouteTables,
+            ReadSubnets,
+            ReadAdminPassword,
+            ReadTags,
+            ReadNatServices,
+            ReadSnapshots,
+            ReadClientGateways,
+            ReadVmTypes,
+            ReadNics,
+            ReadNetPeerings,
+            LinkInternetService,
+            LinkRouteTable,
+            LinkVolume,
+            LinkPublicIp,
+            LinkFlexibleGpu,
+            UnlinkFlexibleGpu,
+            UnlinkInternetService,
+            UnlinkRouteTable,
+            UnlinkVolume,
+            UnlinkPublicIp,
+            UpdateVm,
+            UpdateImage,
+            StartVms,
+            StopVms,
+            AcceptNetPeering,
+            RejectNetPeering,
+            ReadPublicCatalog,
+            ReadRegions,
+            ReadSubregions,
+            ReadPublicIpRanges
+        )
     }
 }
 
