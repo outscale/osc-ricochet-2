@@ -315,6 +315,7 @@ impl RicCall {
     #[allow(clippy::too_many_arguments)]
     fn eval(&self,
             mut main_json: futures::lock::MutexGuard<'_, json::JsonValue, >,
+            mut meta: futures::lock::MutexGuard<'_, json::JsonValue, >,
             cfg: futures::lock::MutexGuard<'_, json::JsonValue, >,
             bytes: hyper::body::Bytes,
             user_id: usize,
@@ -3262,10 +3263,12 @@ fn v4_error_ret(error_msg: &mut String, error:  &str) -> bool
 // connection: sqlite::Connection , connection: & sqlite::ConnectionWithFullMutex
 async fn handler(req: Request<Body>,
                  connection: & Arc<futures::lock::Mutex<json::JsonValue>>,
+                 meta_data: & Arc<futures::lock::Mutex<json::JsonValue>>,
                  req_id: usize,
                  cfg: & Arc<futures::lock::Mutex<json::JsonValue>>)
                  -> Result<Response<Body>, Infallible> {
     let main_json = connection.lock().await;
+    let meta = meta_data.lock().await;
     let cfg = cfg.lock().await;
     let method = req.method().clone();
     let headers = req.headers().clone();
@@ -3593,7 +3596,7 @@ async fn handler(req: Request<Body>,
     match to_call {
         Ok(which_call) => {
             let res = try_conver_response(which_call.eval(
-                main_json, cfg, bytes, user_id, req_id, headers,
+                main_json, meta, cfg, bytes, user_id, req_id, headers,
                 auth
             ), out_convertion);
             let mut response = Response::new(Body::empty());
@@ -3640,6 +3643,7 @@ async fn main() {
     }
     println!("{:#}", cfg.dump());
     let mut connection = json::JsonValue::new_array();
+    let mut meta_data = json::JsonValue::new_array();
     for (cnt_users, _m) in cfg["users"].members().enumerate() {
         connection.push(json::object!{
             Vms: json::JsonValue::new_array(),
@@ -3678,15 +3682,17 @@ async fn main() {
             PublicIps: json::JsonValue::new_array(),
             LinkPublicIps: json::JsonValue::new_array(),
             Snapshots: json::JsonValue::new_array(),
-	    ClientGateways: json::JsonValue::new_array(),
+            ClientGateways: json::JsonValue::new_array(),
             ImageExportTasks: json::JsonValue::new_array(),
             NetPeerings: json::JsonValue::new_array(),
         }).unwrap();
+        meta_data.push(json::object!{}).unwrap();
     }
     let tls = matches!(cfg["tls"] == true, true);
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
     let cfg = Arc::new(Mutex::new(cfg));
+    let meta_data = Arc::new(Mutex::new(meta_data));
     let requet_id = Arc::new(AtomicUsize::new(0));
 
     // We'll bind to 127.0.0.1:3000
@@ -3700,16 +3706,18 @@ async fn main() {
                     // clone it and move that clone into the async block
                     let connection = connection.clone();
                     let requet_id = requet_id.clone();
+                    let meta_data = meta_data.clone();
                     let cfg = cfg.clone();
                     async move {
                         // async block is only executed once, so just pass it on to the closure
                         Ok::<_, hyper::Error>(service_fn( move |_req| {
                             let connection =  connection.clone();
+                            let meta_data = meta_data.clone();
                             let id = requet_id.fetch_add(1, Ordering::Relaxed);
                             let cfg = cfg.clone();
                             // but this closure may also be called multiple times, so make
                             // a clone for each call, and move the clone into the async block
-                            async move { handler(_req, &connection, id, &cfg).await }
+                            async move { handler(_req, &connection, &meta_data, id, &cfg).await }
                         }))
                     }
                 })
@@ -3719,14 +3727,16 @@ async fn main() {
         _ => Server::bind(&addr).serve(
             make_service_fn( move |_| {
                 let connection = connection.clone();
+                let meta_data = meta_data.clone();
                 let requet_id = requet_id.clone();
                 let cfg = cfg.clone();
                 async move {
                     Ok::<_, hyper::Error>(service_fn( move |_req| {
                         let connection =  connection.clone();
+                        let meta_data = meta_data.clone();
                         let id = requet_id.fetch_add(1, Ordering::Relaxed);
                         let cfg = cfg.clone();
-                        async move { handler(_req, &connection, id, &cfg).await }
+                        async move { handler(_req, &connection, &meta_data, id, &cfg).await }
                     }))
                 }
             })
