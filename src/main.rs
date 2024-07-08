@@ -228,6 +228,7 @@ enum RicCall {
     CreateImageExportTask,
     CreateNic,
     CreateNetPeering,
+    CreateVirtualGateway,
 
     DeleteNet,
     DeleteSubnet,
@@ -249,6 +250,7 @@ enum RicCall {
     DeleteImage,
     DeleteNic,
     DeleteNetPeering,
+    DeleteVirtualGateway,
 
     ReadImageExportTasks,
     ReadAccessKeys,
@@ -278,18 +280,21 @@ enum RicCall {
     ReadVmTypes,
     ReadNics,
     ReadNetPeerings,
+    ReadVirtualGateways,
 
     LinkInternetService,
     LinkRouteTable,
     LinkVolume,
     LinkPublicIp,
     LinkFlexibleGpu,
+    LinkVirtualGateway,
 
     UnlinkFlexibleGpu,
     UnlinkInternetService,
     UnlinkRouteTable,
     UnlinkVolume,
     UnlinkPublicIp,
+    UnlinkVirtualGateway,
 
     UpdateVm,
     UpdateImage,
@@ -3106,10 +3111,115 @@ impl RicCall {
                     return bad_argument(req_id, json, format!("cannot delete the net peering {}", net_peering_id).as_str())
                 }
  
-                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+        },
+        RicCall::CreateVirtualGateway => {
+            if auth != AuthType::AkSk {
+                return eval_bad_auth(req_id, json, "CreateVirtualGateway require v4 signature")
             }
+            let in_json = require_in_json!(bytes);
+            println!("{:#}", in_json.dump());
+
+            let virtual_gateway = json::object!{
+                VirtualGatewayId: format!("vgw-{:08x}", req_id),
+                ConnectionType: require_arg!(in_json, "ConnectionType"),
+                "NetToVirtualGatewayLinks": [],
+                "State": "available",
+                "Tags": []
+            };
+            if virtual_gateway["ConnectionType"] != "ipsec.1" {
+                return bad_argument(req_id, json, "The type of VPN connection supported by the virtual gateway needs to be ipsec.1");
+            }
+
+            main_json[user_id]["VirtualGateways"].push(virtual_gateway.clone()).unwrap();
+            json["VirtualGateway"] = virtual_gateway.clone();
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+        },
+        RicCall::ReadVirtualGateways => {
+            if auth != AuthType::AkSk {
+                return eval_bad_auth(req_id, json, "ReadVirtualGateways require v4 signature")
+            }
+
+            let virtual_gateways = &main_json[user_id]["VirtualGateways"];
+
+            json["VirtualGateways"] = (*virtual_gateways).clone();
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+        },
+        RicCall::LinkVirtualGateway => {
+            if auth != AuthType::AkSk {
+                return eval_bad_auth(req_id, json, "LinkVirtualGateway require v4 signature")
+            }
+            let in_json = require_in_json!(bytes);
+            println!("{:#}", in_json.dump());
+
+            let virtual_gateway_id = require_arg!(in_json, "VirtualGatewayId");
+            let net_id = require_arg!(in_json, "NetId");
+            let _ = match get_by_id!("Nets", "NetId", net_id) {
+                Ok(_) => (),
+                _ => return bad_argument(req_id, json, "Net not found")
+            };
+            let virtual_gateway = match get_by_id!("VirtualGateways", "VirtualGatewayId", virtual_gateway_id) {
+                Ok((_, idx)) => &mut main_json[user_id]["VirtualGateways"][idx],
+                _ => return bad_argument(req_id, json, "Virtual Gateway not found")
+            };
+
+            if !virtual_gateway["NetToVirtualGatewayLinks"].is_empty() {
+                return bad_argument(req_id, json, format!("Virtual Gateway {} is already linked to a Net", virtual_gateway_id).as_str())
+            }
+            let virtual_gateway_link = json::object!{
+                "State": "attached",
+                NetId: net_id 
+            };
+            virtual_gateway["NetToVirtualGatewayLinks"].push(virtual_gateway_link.clone()).unwrap();
+            
+            json["NetToVirtualGatewayLink"] = virtual_gateway_link.clone();
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+        },
+        RicCall::UnlinkVirtualGateway => {
+            if auth != AuthType::AkSk {
+                return eval_bad_auth(req_id, json, "UnlinkVirtualGateway require v4 signature")
+            }
+            let in_json = require_in_json!(bytes);
+            println!("{:#}", in_json.dump());
+
+            let virtual_gateway_id = require_arg!(in_json, "VirtualGatewayId");
+            let net_id = require_arg!(in_json, "NetId");
+
+            let get_vgw_link_idx = || -> Option<(usize, usize)> {
+                for (vgw_idx, vgw) in main_json[user_id]["VirtualGateways"].members().enumerate() {
+                    if vgw["VirtualGatewayId"] == virtual_gateway_id {
+                        for (link_idx, link) in vgw["NetToVirtualGatewayLinks"].members().enumerate() {
+                            if link["NetId"] == net_id {
+                                return Some ((vgw_idx, link_idx));
+                            }
+                        }
+                    }
+                }
+                None
+            };
+            let (vgw_idx, link_idx) = match get_vgw_link_idx() {
+                Some((vgw_idx, link_idx)) => (vgw_idx, link_idx),
+                None => return bad_argument(req_id, json, format!("can't find link with net id {}", net_id).as_str())
+            };
+            
+            main_json[user_id]["VirtualGateways"][vgw_idx]["NetToVirtualGatewayLinks"].array_remove(link_idx);
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+        },
+        RicCall::DeleteVirtualGateway => {
+            if auth != AuthType::AkSk {
+                return eval_bad_auth(req_id, json, "DeleteVirtualGateway require v4 signature")
+            }
+            let in_json = require_in_json!(bytes);
+            println!("{:#}", in_json.dump());
+            let virtual_gateways = &mut main_json[user_id]["VirtualGateways"];
+
+            let virtual_gateway_id = require_arg!(in_json, "VirtualGatewayId");
+            array_remove!(virtual_gateways, |vgw| vgw["VirtualGatewayId"] == virtual_gateway_id);
+
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         }
     }
+}
 }
 
 macro_rules! catch_ric_calls {
@@ -3223,7 +3333,12 @@ impl FromStr for RicCall {
             ReadPublicCatalog,
             ReadRegions,
             ReadSubregions,
-            ReadPublicIpRanges
+            ReadPublicIpRanges,
+            CreateVirtualGateway,
+            ReadVirtualGateways,
+            LinkVirtualGateway,
+            UnlinkVirtualGateway,
+            DeleteVirtualGateway
         )
     }
 }
@@ -3678,7 +3793,8 @@ async fn main() {
             PublicIps: json::JsonValue::new_array(),
             LinkPublicIps: json::JsonValue::new_array(),
             Snapshots: json::JsonValue::new_array(),
-	    ClientGateways: json::JsonValue::new_array(),
+            ClientGateways: json::JsonValue::new_array(),
+            VirtualGateways: json::JsonValue::new_array(),
             ImageExportTasks: json::JsonValue::new_array(),
             NetPeerings: json::JsonValue::new_array(),
         }).unwrap();
