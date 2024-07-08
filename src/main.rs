@@ -1457,7 +1457,41 @@ impl RicCall {
                         cg["State"] = "deleted".into();
                     }
                 }
-		json["ClientGateways"] = old_cgs;
+
+                if !bytes.is_empty() {
+                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
+                    match in_json {
+                        Ok(in_json) => {
+                            println!("{:#}", in_json.dump());
+                            if in_json.has_key("Filters") {
+                                let filter = &in_json["Filters"];
+                                json["ClientGateways"] = json::JsonValue::new_array();
+
+                                if !filter.is_object() {
+                                    return bad_argument(req_id, json, "Filter must be an object")
+                                }
+                                for cg in old_cgs.members() {
+                                    let mut need_add = true;
+
+                                    need_add = have_request_filter(filter, cg,
+                                                                   "ClientGatewayIds", "ClientGatewayId", need_add);
+                                    if need_add {
+                                        json["ClientGateways"].push((*cg).clone()).unwrap();
+                                    }
+                                }
+
+
+                            } else {
+                                json["ClientGateways"] = old_cgs;
+                            }
+                        },
+                        Err(_) => {
+                            return bad_argument(req_id, json, "Invalide json");
+                        }
+                    }
+                } else {
+                    json["ClientGateways"] = old_cgs;
+                }
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
             RicCall::LinkInternetService => {
