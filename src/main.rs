@@ -229,7 +229,9 @@ enum RicCall {
     CreateNic,
     CreateNetPeering,
     CreateVirtualGateway,
+    CreateClientGateway,
 
+    DeleteClientGateway,
     DeleteNet,
     DeleteSubnet,
     DeleteKeypair,
@@ -337,13 +339,20 @@ impl RicCall {
                 a["IpRanges"].members().eq(b["IpRanges"].members())
         }
 
-        macro_rules! array_remove_2 {
-            ($json:expr, $req_id:expr, $array:expr, $predicate:expr) => {{
+        macro_rules! array_remove_3 {
+            ($json:expr, $req_id:expr, $array:expr, $predicate:expr, $then:expr) => {{
                 match $array.members().position($predicate) {
-                    Some(idx) => $array.array_remove(idx),
-                    None => return bad_argument($req_id, $json, "Element not found(alerady destroy ?)")
+                    Some(idx) => {$array.array_remove(idx);},
+                    None => $then
                 }
             }}
+        }
+
+        macro_rules! array_remove_2 {
+            ($json:expr, $req_id:expr, $array:expr, $predicate:expr) => {
+                array_remove_3!($json, $req_id, $array, $predicate,
+                return bad_argument($req_id, $json, "Element not found(alerady destroy ?"))
+            }
         }
 
         macro_rules! array_remove {
@@ -1404,10 +1413,51 @@ impl RicCall {
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
 
+            RicCall::CreateClientGateway => {
+                check_aksk_auth!(auth);
+
+                let in_json = require_in_json!(bytes);
+                let cg = json::object!{
+                    "State": "available",
+                    BgpAsn: require_arg!(in_json, "BgpAsn"),
+                    "Tags": [],
+                    ClientGatewayId: format!("cwg-{:08x}", req_id),
+                    ConnectionType: require_arg!(in_json, "ConnectionType"),
+                    PublicIp: require_arg!(in_json, "PublicIp")
+                };
+
+                main_json[user_id]["ClientGateways"].push(
+                    cg.clone()).unwrap();
+                json["ClientGateway"] = cg;
+
+		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            },
+
+            RicCall::DeleteClientGateway => {
+                check_aksk_auth!(auth);
+                let in_json = require_in_json!(bytes);
+                let user_cgs = &mut main_json[user_id]["ClientGateways"];
+                let id = require_arg!(in_json, "ClientGatewayId");
+
+                for cg in user_cgs.members_mut() {
+                    if cg["ClientGatewayId"] == id {
+                        cg["State"] = "deleting".into();
+                    }
+                }
+                Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+            }
 	    RicCall::ReadClientGateways => {
                 check_aksk_auth!(auth);
 
-		json["ClientGateways"] = main_json[user_id]["ClientGateways"].clone();
+                let old_cgs = main_json[user_id]["ClientGateways"].clone();
+                let user_cgs = &mut main_json[user_id]["ClientGateways"];
+                array_remove_3!(in_json, req_id, user_cgs, |n| n["State"] == "deleted", {});
+                for cg in user_cgs.members_mut() {
+                    if cg["State"] == "deleting" {
+                        cg["State"] = "deleted".into();
+                    }
+                }
+		json["ClientGateways"] = old_cgs;
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
             RicCall::LinkInternetService => {
@@ -2585,6 +2635,7 @@ impl RicCall {
                                 "vol" => get_by_id!("Volumes", "VolumeId", id),
                                 "fgpu" => get_by_id!("FlexibleGpus", "FlexibleGpuId", id),
                                 "vpc" => get_by_id!("Nets", "NetId", id),
+                                "cwg" => get_by_id!("ClientGateways", "ClientGatewayId", id),
                                 "image-export" => get_by_id!("ImageExportTasks", "TaskId", id),
                                 _ => Err(bad_argument(req_id, json.clone(),
                                                       format!("invalide resource id {}", t).as_str()))
@@ -3144,6 +3195,8 @@ impl FromStr for RicCall {
             CreateImageExportTask,
             CreateNic,
             CreateNetPeering,
+            CreateClientGateway,
+            DeleteClientGateway,
             DeleteNet,
             DeleteSubnet,
             DeleteKeypair,
