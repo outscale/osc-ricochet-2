@@ -478,6 +478,14 @@ impl RicCall {
             }};
         }
 
+        macro_rules! check_aksk_auth {
+            ($auth:expr) => {{
+                if $auth != AuthType::AkSk {
+                    return eval_bad_auth(req_id, json, format!("{:?} requires v4 signature", *self).as_str())
+                }
+            }};
+        }
+
         let users = &cfg["users"];
         //let mut ret = ("could not happen", StatusCode::NOT_IMPLEMENTED);
 
@@ -498,10 +506,7 @@ impl RicCall {
                                hdr), StatusCode::OK))
             },
             RicCall::ReadVms  => {
-
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadVms require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_vms = &mut main_json[user_id]["Vms"];
                 let mut rm_array = vec![];
@@ -573,9 +578,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::StopVms => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "StopVms require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let ids = require_arg!(in_json, "VmIds");
                 let user_vms = &mut main_json[user_id]["Vms"];
@@ -607,9 +610,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::StartVms => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "StartVms require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let ids = require_arg!(in_json, "VmIds");
                 let user_vms = &mut main_json[user_id]["Vms"];
@@ -636,9 +637,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteVms  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteVms require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let user_vms = &mut main_json[user_id]["Vms"];
 
                 json["Vms"] = (*user_vms).clone();
@@ -680,9 +679,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteLoadBalancer  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteLoadBalancer require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let user_lbu = &mut main_json[user_id]["LoadBalancers"];
 
                 if !bytes.is_empty() {
@@ -705,6 +702,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteKeypair  => {
+                check_aksk_auth!(auth);
                 let user_kps = &mut main_json[user_id]["Keypairs"];
 
                 if !bytes.is_empty() {
@@ -739,9 +737,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateLoadBalancer => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateLoadBalancer require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let mut lb = json::object!{
                     ApplicationStickyCookiePolicies: json::array![],
                     BackendVmIds: json::array![],
@@ -833,9 +829,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
 	    RicCall::UpdateImage => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "UpdateImage require v4 signature")
-                }
+                check_aksk_auth!(auth);
 		let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 let image_id = require_arg!(in_json, "ImageId");
@@ -886,9 +880,7 @@ impl RicCall {
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
 	    RicCall::DeleteImage => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
 		println!("{:#}", in_json.dump());
                 let user_imgs = &mut main_json[user_id]["Images"];
@@ -899,9 +891,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
             RicCall::ReadImageExportTasks => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_iets = &mut main_json[user_id]["ImageExportTasks"];
 
@@ -946,9 +936,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateImageExportTask => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteImage require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 let img_id = require_arg!(in_json, "ImageId");
@@ -977,9 +965,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateImage => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let image_id = format!("ami-{:08x}", req_id);
                 let mut image = json::object!{
                     AccountId: format!("{:012x}", user_id),
@@ -1043,9 +1029,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSubnet => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateSubnet require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let ip_range = require_arg!(in_json, "IpRange");
                 let net_id = require_arg!(in_json, "NetId");
@@ -1076,9 +1060,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteRouteTable => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteRouteTable require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let user_nets = &mut main_json[user_id]["RouteTables"];
                 // TODO: check subnet is destroyable
@@ -1087,9 +1069,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteSubnet => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteSubnet require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let user_nets = &mut main_json[user_id]["Subnets"];
                 // TODO: check subnet is destroyable
@@ -1098,9 +1078,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateNet => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateNet require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let net_id = format!("vpc-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
                 let mut net = json::object!{
@@ -1134,14 +1112,13 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteRoute => {
+                check_aksk_auth!(auth);
                 // TODO
                 json["ricochet-info"] = "CALL LOGIC NOT YET IMPLEMENTED".into();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadNatServices => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadNatServices require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_dl = &main_json[user_id]["NatServices"];
 
@@ -1151,9 +1128,7 @@ impl RicCall {
 
             },
             RicCall::DeleteNatService => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNatService require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let user_ns = &mut main_json[user_id]["NatServices"];
                 let id = require_arg!(in_json, "NatServiceId");
@@ -1163,9 +1138,7 @@ impl RicCall {
 
             },
             RicCall::CreateNatService => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "LinkPublicIp require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let user = &mut main_json[user_id];
                 let in_json = require_in_json!(bytes);
                 let ip_id = require_arg!(in_json, "PublicIpId");
@@ -1192,9 +1165,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadSnapshots => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadSnapshots require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let snapshots = &mut main_json[user_id]["Snapshots"];
                 for snap in snapshots.members_mut() {
                     if snap["State"] == "pending" {
@@ -1226,9 +1197,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteSnapshot => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateSnapshot require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let snapshots = &mut main_json[user_id]["Snapshots"];
                 let id = require_arg!(in_json, "SnapshotId");
@@ -1237,9 +1206,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSnapshot => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateSnapshot require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
                 let snap = if in_json.has_key("VolumeId") {
@@ -1294,9 +1261,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateRoute => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateRoute require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let rt_id = require_arg!(in_json, "RouteTableId");
                 let new_route = json::object!{
@@ -1316,9 +1281,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateRouteTable => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateRouteTable require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let net_id = require_arg!(in_json, "NetId");
                 let mut rt = json::object!{
@@ -1345,6 +1308,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkFlexibleGpu => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let fgpu_id = require_arg!(in_json, "FlexibleGpuId");
                 let vm_id = require_arg!(in_json, "VmId");
@@ -1364,6 +1328,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkFlexibleGpu => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let fgpu_id = require_arg!(in_json, "FlexibleGpuId");
 
@@ -1378,6 +1343,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkRouteTable => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let route_table_id = require_arg!(in_json, "RouteTableId");
                 let subnet_id = require_arg!(in_json, "SubnetId");
@@ -1405,6 +1371,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkRouteTable => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let link_route_table_id = require_arg!(in_json, "LinkRouteTableId");
 
@@ -1438,17 +1405,13 @@ impl RicCall {
 	    },
 
 	    RicCall::ReadClientGateways => {
-		if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadSecurityGroups require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
 		json["ClientGateways"] = main_json[user_id]["ClientGateways"].clone();
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
             RicCall::LinkInternetService => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "LinkInternetService require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let id = require_arg!(in_json, "InternetServiceId");
                 let net_id = require_arg!(in_json, "NetId");
@@ -1467,9 +1430,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkPublicIp => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "LinkPublicIp require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
 
                 println!("{:#}", in_json.dump());
@@ -1519,9 +1480,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkPublicIp => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "UnlinkPublicIp require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 if in_json.has_key("PublicIpId") {
@@ -1558,9 +1517,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkInternetService => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "UnlinkInternetService require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 let id = require_arg!(in_json, "InternetServiceId");
@@ -1580,9 +1537,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteInternetService => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteInternetService require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let user_iwgs = &mut main_json[user_id]["InternetServices"];
                 // TODO: check net is destroyable
@@ -1591,9 +1546,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeletePublicIp => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeletePublicIp require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 let user_iwgs = &mut main_json[user_id]["PublicIps"];
@@ -1603,9 +1556,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteNet => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNet require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let user_nets = &mut main_json[user_id]["Nets"];
                 // TODO: check net is destroyable
@@ -1614,9 +1565,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadKeypairs => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadKeypairs require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_kps = &main_json[user_id]["Keypairs"];
 
@@ -1630,9 +1579,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadNets => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadNets require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_nets = &main_json[user_id]["Nets"];
 
@@ -1700,6 +1647,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadSubregions  => {
+                check_aksk_auth!(auth);
                 json["Subregions"] = json::array![];
                 match cfg.has_key("region") {
                     true => {
@@ -1752,6 +1700,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadAccounts  => {
+                check_aksk_auth!(auth);
                 let email = users[user_id]["login"].clone();
 
                 json["Accounts"] =
@@ -1778,6 +1727,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadImages  => {
+                check_aksk_auth!(auth);
                 if auth != AuthType::AkSk {
                     return eval_bad_auth(req_id, json, "ReadImages require v4 signature")
                 }
@@ -1834,9 +1784,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadSecurityGroups  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadSecurityGroups require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_sgs = &main_json[user_id]["SecurityGroups"];
                 if !bytes.is_empty() {
@@ -1868,9 +1816,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadDirectLinks  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadDirectLinks require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_dl = &main_json[user_id]["DirectLinks"];
 
@@ -1879,6 +1825,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::LinkVolume => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
 
                 let device_name = require_arg!(in_json, "DeviceName");
@@ -1927,9 +1874,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteVolume => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteVolume require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let user_nets = &mut main_json[user_id]["Volumes"];
                 let id = require_arg!(in_json, "VolumeId");
@@ -1938,6 +1883,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UnlinkVolume => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
 
                 let volume_id = require_arg!(in_json, "VolumeId");
@@ -1963,6 +1909,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateVolume => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
 
                 let vol = json::object!{
@@ -1986,9 +1933,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadRouteTables  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadRouteTables require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_rts = &main_json[user_id]["RouteTables"];
 
@@ -1997,9 +1942,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadSubnets  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadSubnets require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_rts = &main_json[user_id]["Subnets"];
 
@@ -2008,9 +1951,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadInternetServices  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadInternetServices require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_imgs = &main_json[user_id]["InternetServices"];
 
@@ -2019,9 +1960,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadPublicIps  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadPublicIps require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_imgs = &main_json[user_id]["PublicIps"];
 
@@ -2050,9 +1989,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadLinkPublicIps  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadLinkPublicIps require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_imgs = &main_json[user_id]["LinkPublicIps"];
 
@@ -2061,9 +1998,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadTags  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadTags require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_tags = &main_json[user_id]["Tags"];
 
@@ -2094,9 +2029,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadVolumes  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadVolumes require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let user_imgs = &mut main_json[user_id]["Volumes"];
                 json["Volumes"] = (*user_imgs).clone();
                 if !bytes.is_empty() {
@@ -2134,9 +2067,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadLoadBalancers  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadLoadBalancers require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_vms = &main_json[user_id]["LoadBalancers"];
 
@@ -2145,6 +2076,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadConsumptionAccount  => {
+                check_aksk_auth!(auth);
                 println!("RicCall::ReadConsumptionAccount !!!");
                 Ok((jsonobj_to_strret(json::object!{
                     ConsumptionEntries:
@@ -2157,9 +2089,7 @@ impl RicCall {
                 }, req_id), StatusCode::OK))
             },
             RicCall::ReadFlexibleGpus  => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadFlexibleGpus require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let user_fgpus = &mut main_json[user_id]["FlexibleGpus"];
 
@@ -2208,9 +2138,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateKeypair => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateKeypair require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let mut kp = json::object!{};
                 match json::parse(std::str::from_utf8(&bytes).unwrap()) {
                     Ok(in_json) => {
@@ -2269,9 +2197,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteSecurityGroup => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteSecurityGroupRule require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
                 println!("DeleteSecurityGroup: {:#}", in_json.dump());
@@ -2291,9 +2217,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteSecurityGroupRule => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteSecurityGroupRule require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
                 println!("DeleteSecurityGroupRule: {:#}", in_json.dump());
@@ -2341,9 +2265,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateDirectLink => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadDirectLinks require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
 
@@ -2365,9 +2287,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreatePublicIp => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreatePublicIp require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let mut rng = thread_rng();
                 let eip = json::object!{
                     PublicIpId: format!("eipalloc-{:08x}", req_id),
@@ -2381,9 +2301,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateInternetService => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateInternetService require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let igw = json::object!{
                     InternetServiceId: format!("igw-{:08x}", req_id),
                     Tags: json::array!{},
@@ -2395,9 +2313,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateSecurityGroupRule => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateSecurityGroupRule require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
                 println!("CreateSecurityGroupRule: {:#}", in_json.dump());
@@ -2453,9 +2369,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
             RicCall::CreateSecurityGroup => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateImage require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let sg_id = format!("sg-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
                 let mut sg = json::object!{
@@ -2483,6 +2397,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadAdminPassword => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let vm_id = require_arg!(in_json, "VmId");
                 json["VmId"] = vm_id;
@@ -2490,6 +2405,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::UpdateVm => {
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 let vm_id = require_arg!(in_json, "VmId");
@@ -2512,9 +2428,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateVms => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateVms require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let vm_id = format!("i-{:08x}", req_id);
                 let in_json = match json::parse(std::str::from_utf8(&bytes).unwrap()) {
                     Ok(in_json) => in_json,
@@ -2645,9 +2559,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateTags|RicCall::DeleteTags => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateTags/DeleteTags require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
                 if !in_json.has_key("Tags") && !in_json.has_key("ResourceIds") {
@@ -2714,9 +2626,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadQuotas => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadQuotas require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 json["QuotaTypes"] = json::array![
                     json::object!{
                         Quotas: json::array![
@@ -2744,9 +2654,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteFlexibleGpu => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteFlexibleGpu require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
                 let in_json = require_in_json!(bytes);
                 let id = require_arg!(in_json, "FlexibleGpuId");
@@ -2755,9 +2663,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteDirectLink => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteDirectLink require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let user_fgpu = &mut main_json[user_id]["DirectLinks"];
                 let in_json = require_in_json!(bytes);
                 let id = require_arg!(in_json, "DirectLinkId");
@@ -2766,9 +2672,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateFlexibleGpu => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateFlexibleGpu require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let user_fgpu = &mut main_json[user_id]["FlexibleGpus"];
                 let in_json = require_in_json!(bytes);
                 let model_name = require_arg!(in_json, "ModelName");
@@ -2793,9 +2697,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateNic => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateNic require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let nic_id = format!("eni-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
@@ -2896,9 +2798,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadNics => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadNic require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let nics = &main_json[user_id]["Nics"];
 
@@ -2907,9 +2807,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteNic => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "DeleteNic require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let nics = &mut main_json[user_id]["Nics"];
                 let in_json = require_in_json!(bytes);
                 let nic_id = require_arg!(in_json, "NicId");
@@ -2918,9 +2816,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateNetPeering => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "CreateNetPeering require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
 
@@ -3002,9 +2898,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadNetPeerings => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "ReadNetPeerings require v4 signature")
-                }
+                check_aksk_auth!(auth);
 
                 let net_peerings = &main_json[user_id]["NetPeerings"];
 
@@ -3012,9 +2906,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::AcceptNetPeering => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "AcceptNetPeering require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
 
@@ -3063,9 +2955,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::RejectNetPeering => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "AcceptNetPeering require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
 
@@ -3083,9 +2973,7 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteNetPeering => {
-                if auth != AuthType::AkSk {
-                    return eval_bad_auth(req_id, json, "AcceptNetPeering require v4 signature")
-                }
+                check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
 
@@ -3114,9 +3002,7 @@ impl RicCall {
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::CreateVirtualGateway => {
-            if auth != AuthType::AkSk {
-                return eval_bad_auth(req_id, json, "CreateVirtualGateway require v4 signature")
-            }
+            check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
             println!("{:#}", in_json.dump());
 
@@ -3136,9 +3022,7 @@ impl RicCall {
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::ReadVirtualGateways => {
-            if auth != AuthType::AkSk {
-                return eval_bad_auth(req_id, json, "ReadVirtualGateways require v4 signature")
-            }
+            check_aksk_auth!(auth);
 
             let virtual_gateways = &main_json[user_id]["VirtualGateways"];
 
@@ -3146,9 +3030,7 @@ impl RicCall {
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::LinkVirtualGateway => {
-            if auth != AuthType::AkSk {
-                return eval_bad_auth(req_id, json, "LinkVirtualGateway require v4 signature")
-            }
+            check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
             println!("{:#}", in_json.dump());
 
@@ -3176,9 +3058,7 @@ impl RicCall {
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::UnlinkVirtualGateway => {
-            if auth != AuthType::AkSk {
-                return eval_bad_auth(req_id, json, "UnlinkVirtualGateway require v4 signature")
-            }
+            check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
             println!("{:#}", in_json.dump());
 
@@ -3206,9 +3086,7 @@ impl RicCall {
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::DeleteVirtualGateway => {
-            if auth != AuthType::AkSk {
-                return eval_bad_auth(req_id, json, "DeleteVirtualGateway require v4 signature")
-            }
+            check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
             println!("{:#}", in_json.dump());
             let virtual_gateways = &mut main_json[user_id]["VirtualGateways"];
