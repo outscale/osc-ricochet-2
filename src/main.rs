@@ -2767,13 +2767,12 @@ impl RicCall {
             },
             RicCall::CreateNic => {
                 check_aksk_auth!(auth);
-                let nic_id = format!("eni-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
                 println!("{:#}", in_json.dump());
 
                 let subnet_id = require_arg!(in_json, "SubnetId");
-                let subnet = match main_json[user_id]["Subnets"].members_mut().find(|subnet| subnet_id == subnet["SubnetId"]) {
-                    Some(snet) => snet,
+                let subnet = match get_by_id!("Subnets", "SubnetId", subnet_id) {
+                    Ok((_, idx)) => &main_json[user_id]["Subnets"][idx],
                     _ => return bad_argument(req_id, json, format!("can't find subnet id {}", subnet_id).as_str())
                 };
 
@@ -2783,14 +2782,14 @@ impl RicCall {
                     "State": "available",
                     "IsSourceDestChecked": true,
                     "PrivateDnsName": "",
-                    "Tags": [],
+                    "Tags": json::array!{},
                     Description: optional_arg!(in_json, "Description", ""),
                     AccountId: format!("{:012x}", user_id),
-                    SecurityGroups: [],
+                    SecurityGroups: json::array!{},
                     "MacAddress": "A1:B2:C3:D4:E5:F6",
-                    "NetId": "",
-                    NicId: nic_id,
-                    PrivateIps: []
+                    NetId: subnet["NetId"].clone(),
+                    NicId: format!("eni-{:08x}", req_id),
+                    PrivateIps: json::array!{}
                 };
 
                 let subnet_st: Ipv4Net = subnet["IpRange"].as_str().unwrap().parse().unwrap();
@@ -2802,7 +2801,7 @@ impl RicCall {
                         let private_ip = require_arg!(ip_light, "PrivateIp");
                         let is_primary = optional_arg!(ip_light, "IsPrimary", false);
                         let private_ip_block = json::object!{
-                            PrivateDnsName: private_ip.clone().as_str().unwrap().to_owned() + ".eu-west-2.compute.internal",
+                            PrivateDnsName: format!("{}.{}.compute.internal", private_ip, get_region(&cfg)),
                             PrivateIp: private_ip.clone(),
                             IsPrimary: is_primary.clone(),
                         };
@@ -2851,7 +2850,7 @@ impl RicCall {
                         _ => return bad_argument(req_id, json, "all private ips used")
                     };
                     let private_ip_block = json::object!{
-                        PrivateDnsName: private_ip.to_string().to_owned() + ".eu-west-2.compute.internal",
+                        PrivateDnsName: format!("{}.{}.compute.internal", private_ip, get_region(&cfg)),
                         PrivateIp: private_ip.to_string(),
                         IsPrimary: true,
                     };
