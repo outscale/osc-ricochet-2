@@ -342,7 +342,7 @@ impl RicCall {
         macro_rules! array_remove_3 {
             ($json:expr, $req_id:expr, $array:expr, $predicate:expr, $then:expr) => {{
                 match $array.members().position($predicate) {
-                    Some(idx) => {$array.array_remove(idx);},
+                    Some(idx) => { $array.array_remove(idx);},
                     None => $then
                 }
             }}
@@ -2840,10 +2840,10 @@ impl RicCall {
                                 if used_ips.len() == usize::try_from(hosts_of_netmask(subnet_st.prefix_len())).unwrap() {
                                     return bad_argument(req_id, json, "all private ips used for subnet")
                                 }
-                                if used_ips.members().find(|ip| private_ip == **ip).is_some() {
+                                if used_ips.members().any(|ip| private_ip == *ip) {
                                     return bad_argument(req_id, json, "private ip already in use in subnet");
                                 }
-                                if private_ips.members().find(|ip_block| private_ip == ip_block["PrivateIp"]).is_some() {
+                                if private_ips.members().any(|ip_block| private_ip == ip_block["PrivateIp"]) {
                                     return bad_argument(req_id, json, "private ips need to be exclusive");
                                 }
 
@@ -2861,8 +2861,8 @@ impl RicCall {
                         used_ips_req.push(pip["PrivateIp"].clone()).unwrap();
                     }
                     let mut hosts = subnet_st.hosts();
-                    let private_ip = match hosts.find(|ip| used_ips.members().find(|used_ip| used_ip.as_str().unwrap() == ip.to_string()).is_none()
-                                                      && used_ips_req.members().find(|used_ip| used_ip.as_str().unwrap() == ip.to_string()).is_none()) {
+                    let private_ip = match hosts.find(|ip| !used_ips.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())
+                                                      && !used_ips_req.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())) {
                         Some(pip) => pip,
                         _ => return bad_argument(req_id, json, "all private ips used")
                     };
@@ -2930,7 +2930,6 @@ impl RicCall {
                 if source_user_id != user_id {
                     return bad_argument(req_id, json, format!("the source net id {} needs to be your own", source_net_id).as_str())
                 }
-                
                 let mut net_peering = json::object!{
                     "Tags": [],
                     State: {
@@ -2950,11 +2949,11 @@ impl RicCall {
                     NetPeeringId: format!("pcx-{:08x}", req_id)
                 };
 
-                if main_json[source_user_id]["Vms"].len() == 0 || main_json[accepter_user_id]["Vms"].len() == 0 {
+                if main_json[source_user_id]["Vms"].is_empty() || main_json[accepter_user_id]["Vms"].is_empty() {
                     return bad_argument(req_id, json, "Peered Nets must contain at least one virtual machine (VM) each before the creation of the Net peering");
                 }
                 let get_net_peering = |source_net: &str, accepter_net: &str| main_json[source_user_id]["NetPeerings"].members().find(|net_p| source_net_id == net_p[source_net]["NetId"] && accepter_net_id == net_p[accepter_net]["NetId"]);
-                
+
                 if let Some (existing_net_peering) = get_net_peering("SourceNet", "AccepterNet") {
                     json["NetPeering"] = existing_net_peering.clone();
                     return Ok((jsonobj_to_strret(json, req_id), StatusCode::OK));
@@ -2999,7 +2998,7 @@ impl RicCall {
 
                 let is_pending_net_p = |net_p: &JsonValue| {
                     net_peering_id == net_p["NetPeeringId"]
-                    && &format!("{:012x}", user_id) == net_p["AccepterNet"]["AccountId"].as_str().unwrap()
+                    && format!("{:012x}", user_id) == net_p["AccepterNet"]["AccountId"].as_str().unwrap()
                     && net_p["State"]["Name"].as_str().unwrap() == "pending-acceptance"
                 };
 
@@ -3046,8 +3045,8 @@ impl RicCall {
 
                 let net_peering_id = require_arg!(in_json, "NetPeeringId");
 
-                let net_peering = match main_json[user_id]["NetPeerings"].members_mut().find(|net_p| 
-                    net_p["NetPeeringId"] == net_peering_id && net_p["State"]["Name"] == "pending-acceptance") 
+                let net_peering = match main_json[user_id]["NetPeerings"].members_mut().find(|net_p|
+                    net_p["NetPeeringId"] == net_peering_id && net_p["State"]["Name"] == "pending-acceptance")
                 {
                     Some(net_p) => net_p,
                     None => return bad_argument(req_id, json, format!("can't find the net peering {} in pending-acceptance state", net_peering_id).as_str())
@@ -3063,13 +3062,13 @@ impl RicCall {
                 println!("{:#}", in_json.dump());
 
                 let net_peering_id = require_arg!(in_json, "NetPeeringId");
-                let is_request_owner = |net_peering: &JsonValue| net_peering["SourceNet"]["AccountId"].as_str().unwrap() == &format!("{:012x}", user_id);
-                let is_peer_net_owner = |net_peering: &JsonValue| net_peering["AccepterNet"]["AccountId"].as_str().unwrap() == &format!("{:012x}", user_id);
+                let is_request_owner = |net_peering: &JsonValue| net_peering["SourceNet"]["AccountId"].as_str().unwrap() == format!("{:012x}", user_id);
+                let is_peer_net_owner = |net_peering: &JsonValue| net_peering["AccepterNet"]["AccountId"].as_str().unwrap() == format!("{:012x}", user_id);
 
                 let mut deleted = false;
                 for resources in main_json.members_mut() {
                     if resources["NetPeerings"].members().any(|net_peering| {
-                        net_peering_id == net_peering["NetPeeringId"] && 
+                        net_peering_id == net_peering["NetPeeringId"] &&
                         (match net_peering["State"]["Name"].as_str().unwrap() {
                             "pending-acceptance" => is_request_owner(net_peering),
                             "active"  => is_request_owner(net_peering) || is_peer_net_owner(net_peering),
@@ -3083,7 +3082,7 @@ impl RicCall {
                 if !deleted {
                     return bad_argument(req_id, json, format!("cannot delete the net peering {}", net_peering_id).as_str())
                 }
- 
+
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::CreateVirtualGateway => {
@@ -3121,7 +3120,7 @@ impl RicCall {
 
             let virtual_gateway_id = require_arg!(in_json, "VirtualGatewayId");
             let net_id = require_arg!(in_json, "NetId");
-            let _ = match get_by_id!("Nets", "NetId", net_id) {
+            match get_by_id!("Nets", "NetId", net_id) {
                 Ok(_) => (),
                 _ => return bad_argument(req_id, json, "Net not found")
             };
@@ -3135,10 +3134,9 @@ impl RicCall {
             }
             let virtual_gateway_link = json::object!{
                 "State": "attached",
-                NetId: net_id 
+                NetId: net_id
             };
             virtual_gateway["NetToVirtualGatewayLinks"].push(virtual_gateway_link.clone()).unwrap();
-            
             json["NetToVirtualGatewayLink"] = virtual_gateway_link.clone();
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
@@ -3166,7 +3164,6 @@ impl RicCall {
                 Some((vgw_idx, link_idx)) => (vgw_idx, link_idx),
                 None => return bad_argument(req_id, json, format!("can't find link with net id {}", net_id).as_str())
             };
-            
             main_json[user_id]["VirtualGateways"][vgw_idx]["NetToVirtualGatewayLinks"].array_remove(link_idx);
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
