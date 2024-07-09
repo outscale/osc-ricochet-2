@@ -185,6 +185,13 @@ fn try_conver_response(rres: Result<(String, StatusCode), (String, StatusCode)>,
     (xml.unwrap(), StatusCode::OK)
 }
 
+fn get_region(cfg: &JsonValue) -> String {
+    match cfg.has_key("region") {
+        true => format!("{}", cfg["region"]["name"]),
+        _ => "mud-half-3".into()
+    }
+}
+
 fn get_default_subregion(cfg: &JsonValue) -> String {
     match cfg.has_key("region") {
         true => match cfg["region"].has_key("subregions") {
@@ -1715,16 +1722,10 @@ impl RicCall {
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadRegions  => {
-
-                let region_name = match cfg.has_key("region") {
-                    true => cfg["region"]["name"].as_str().unwrap(),
-                    _ => "mud-half-3"
-                };
-
                 json["Regions"] = json::array![
                     json::object!{
                         Endpoint: "127.0.0.1:3000",
-                        RegionName: region_name
+                        RegionName: get_region(&cfg) 
                     }
                 ];
 
@@ -1733,54 +1734,34 @@ impl RicCall {
             RicCall::ReadSubregions  => {
                 check_aksk_auth!(auth);
                 json["Subregions"] = json::array![];
-                match cfg.has_key("region") {
-                    true => {
-                        let region = & cfg["region"];
-                        let region_name = region["name"].as_str().unwrap();
-                        match region.has_key("subregions") {
-                            true => {
-                                for sub in region["subregions"].members() {
-                                    json["Subregions"].push(json::object!{
-                                        State: "available",
-                                        RegionName: region_name,
-                                        SubregionName: format!("{}{}", region_name, sub),
-                                        LocationCode: "PAR1"
-                                    }).unwrap();
-                                }
-                            },
-                            _ => {
-                                json["Subregions"].push(json::object!{
-                                    State: "available",
-                                    RegionName: region_name,
-                                    SubregionName: format!("{}a", region_name),
-                                    LocationCode: "PAR1"
-                                }).unwrap();
-                                json["Subregions"].push(json::object!{
-                                    State: "available",
-                                    RegionName: region_name,
-                                    SubregionName: format!("{}b", region_name),
-                                    LocationCode: "PAR1"
-                                }).unwrap();
 
-                            }
+                let region_name = get_region(&cfg);
+                match cfg.has_key("region") {
+                    true if cfg["region"].has_key("subregions") => {
+                        for sub in cfg["region"]["subregions"].members() {
+                            json["Subregions"].push(json::object!{
+                                State: "available",
+                                RegionName: region_name.clone(),
+                                SubregionName: format!("{}{}", region_name.clone(), sub),
+                                LocationCode: "PAR1"
+                            }).unwrap();
                         }
-                    },
+                    }
                     _ => {
                         json["Subregions"].push(json::object!{
                             State: "available",
-                            RegionName: "mud-half-3",
-                            SubregionName: "mud-half-3a",
+                            RegionName: region_name.clone(),
+                            SubregionName: format!("{}a", region_name.clone()),
                             LocationCode: "PAR1"
                         }).unwrap();
                         json["Subregions"].push(json::object!{
                             State: "available",
-                            RegionName: "mud-half-3",
-                            SubregionName: "mud-half-3b",
+                            RegionName: region_name.clone(),
+                            SubregionName: format!("{}b", region_name.clone()),
                             LocationCode: "PAR1"
                         }).unwrap();
                     }
                 };
-
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadAccounts  => {
@@ -2359,7 +2340,7 @@ impl RicCall {
                     DirectLinkId: format!("dxcon-{:08x}", req_id),
                     DirectLinkName: require_arg!(in_json, "DirectLinkName"),
                     "Location": "PAR1",
-                    "RegionName": "eu-west-2",
+                    RegionName: get_region(&cfg),
                     "State": "requested"
                 };
                 if dl["Bandwidth"] != "1Gbps" && dl["Bandwidth"] != "10Gbps" {
