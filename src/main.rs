@@ -1132,28 +1132,38 @@ impl RicCall {
             RicCall::CreateSubnet => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                let ip_range = require_arg!(in_json, "IpRange");
-                let net_id = require_arg!(in_json, "NetId");
-                let mut subnet = json::object!{
-                    SubnetId: format!("subnet-{:08x}", req_id),
-                    State: "available",
-                    AvailableIpsCount: 16379,
-                    Tags: json::array!{},
-                    MapPublicIpOnLaunch: false
-                };
-                if in_json.has_key("SubregionName") {
-                    subnet["SubregionName"] = in_json["SubregionName"].clone();
-                }
 
-                let user_nets = &mut main_json[user_id]["Nets"];
-                match user_nets.members_mut().find(|net| net_id == net["NetId"]) {
-                    Some(_) => {
-                        // I should check the range is valide here.
-                        subnet["IpRange"] = ip_range;
-                        subnet["NetId"] = net_id;
-                    },
-                    _ => return bad_argument(req_id, json, "NetId doesn't corespond to an existing Net")
+                let mut subnet = json::object!{
+                    Tags: [],
+                    SubregionName: optional_arg!(in_json, "SubregionName", get_default_subregion(&cfg)),
+                    SubnetId: format!("subnet-{:08x}", req_id),
+                    IpRange: require_arg!(in_json, "IpRange"),
+                    MapPublicIpOnLaunch: false,
+                    State: "available",
+                    NetId: require_arg!(in_json, "NetId")
                 };
+                let net = match get_by_id!("Nets", "NetId", subnet["NetId"]) {
+                    Ok((_, idx)) => &main_json[user_id]["Nets"][idx],
+                    _ => return bad_argument(req_id, json, "NetId doesn't correspond to an existing Net")
+                };
+                let net_st: Ipv4Net = net["IpRange"].as_str().unwrap().parse().unwrap();
+                let subnet_st: Ipv4Net = match subnet["IpRange"].as_str().unwrap().parse() {
+                    Ok(net) => net,
+                    _ => return bad_argument(req_id, json, "Subnet IP range is not a valid")
+                };
+                if !net_st.contains(&subnet_st) {
+                    return bad_argument(req_id, json, "Subnet IP range needs to be a subset of the Net")
+                }
+                for snet in main_json[user_id]["Subnets"].members() {
+                    if snet["NetId"] == subnet["NetId"] {
+                        let snet_st : Ipv4Net = snet["IpRange"].as_str().unwrap().parse().unwrap();
+                        if snet_st.contains(&subnet_st) || subnet_st.contains(&snet_st) {
+                            return bad_argument(req_id, json, "Subnets IP range must not overlap")
+                        } 
+                    } 
+                }
+                subnet["AvailableIpsCount"] = hosts_of_netmask(subnet_st.prefix_len()).into();
+
                 main_json[user_id]["Subnets"].push(
                     subnet.clone()).unwrap();
                 json["Subnet"] = subnet;
