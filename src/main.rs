@@ -2491,11 +2491,18 @@ impl RicCall {
 
                 if in_json.has_key("NetId") {
                     let net_id = in_json["NetId"].clone();
-                    let user_nets = &mut main_json[user_id]["Nets"];
-                    match user_nets.members().position(|net| net_id == net["NetId"]) {
-                        Some(_idx) => { sg["NetId"] = net_id },
+                    match get_by_id!("Nets", "NetId", net_id) {
+                        Ok(_) => sg["NetId"] = net_id,
                         _ => return bad_argument(req_id, json, "NetId doesn't corespond to a net id")
                     }
+                    sg["OutboundRules"].push(json::object!{
+                        "FromPortRange": -1,
+                        "IpProtocol": "-1",
+                        "ToPortRange": -1,
+                        "IpRanges": [
+                            "0.0.0.0/0"
+                        ]
+                    }).unwrap();
                 }
 
                 main_json[user_id]["SecurityGroups"].push(
