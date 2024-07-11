@@ -397,6 +397,33 @@ impl RicCall {
             }
         }
 
+        macro_rules! filters_check {
+            ( $in_json:expr, $obj:expr, $type:expr, $( $filer_id:ident, $resource_id:ident ),* ) => {
+                if $in_json.has_key("Filters") {
+                    let filters = &$in_json["Filters"];
+                    if !filters.is_object() {
+                        return bad_argument(req_id, json, "Filter must be an object :p")
+                    }
+                    json[$type] = json::array!{};
+                    for o in $obj.members() {
+                        let mut need_add = true;
+
+                        $(
+                            need_add = have_request_filter(filters, o, stringify!($filer_id),
+                                                           stringify!($resource_id), need_add);
+                        )*
+
+                        if need_add {
+                            json[$type].push((*o).clone()).unwrap();
+                        }
+                    }
+                } else {
+                    json[$type] = (*$obj).clone();
+                }
+            }
+        }
+
+
         fn resource_types_to_type(types: &str) -> String {
             match types {
                 "Vms" => "vm",
@@ -1706,7 +1733,14 @@ impl RicCall {
 
                 let user_nets = &main_json[user_id]["Nets"];
 
-                json["Nets"] = (*user_nets).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    logln!("nets", "in", "{:#}", in_json.dump());
+
+                    filters_check!(in_json, user_nets, "Nets", NetIds, NetId);
+                } else {
+                    json["Nets"] = (*user_nets).clone();
+                }
 
                 logln!("nets", "out", "{:#}", json.dump());
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
