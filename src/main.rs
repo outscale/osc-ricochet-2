@@ -990,7 +990,7 @@ impl RicCall {
                 let img_id = require_arg!(in_json, "ImageId");
                 match main_json[user_id]["Images"].members().find(|img| img["ImageId"] == img_id) {
                     Some(_) => {}
-                    _ => return bad_argument(req_id, json, "iprange size is nope")
+                    _ => return bad_argument(req_id, json, "Can't find ImageId")
                 };
 
                 // {"ImageId":"ami-00000001","OsuExport":{"DiskImageFormat":"qcow2","OsuBucket":"test-image-name-9159339220693928153","OsuManifestUrl":"","OsuPrefix":""}}
@@ -1144,7 +1144,7 @@ impl RicCall {
 
                     match net_st {
                         Ok(range) => {
-                            if range.prefix_len() != 16 && range.prefix_len() != 28 {
+                            if range.prefix_len() > 29 {
                                 return bad_argument(req_id, json, "iprange size is nope")
                             }
                             net["IpRange"] = iprange.into()
