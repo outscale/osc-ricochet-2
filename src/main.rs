@@ -402,6 +402,29 @@ impl RicCall {
             2u32.pow((32 - netmask).into())
         }
 
+        macro_rules! logln {
+            ($scope:expr, $dir:expr, $($arg:tt)*) => {{
+                if cfg.has_key("log") {
+                    let dir = &cfg["log"]["dir"];
+
+                    if |scope: &str| -> bool {
+                        if scope == "all" {
+                            return true
+                        }
+                        for s in cfg["log"]["scope"].members() {
+                            if s == scope || s == "all" {
+                                return true
+                            }
+                        }
+                        false
+                    } ($scope) &&
+                        (dir == $dir || dir == "all")
+                    {
+                        println!($($arg)*)
+                    }
+                }
+            }}
+        }
         macro_rules! used_ips_of_subnet {
             ($subnet_id:expr) => {{
                 let mut used_ips = json::array!();
@@ -1669,6 +1692,7 @@ impl RicCall {
 
                 json["Nets"] = (*user_nets).clone();
 
+                logln!("nets", "out", "{:#}", json.dump());
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadAccessKeys => {
@@ -1830,7 +1854,7 @@ impl RicCall {
                             return bad_argument(req_id, json, "Invalid JSON format")
                         },
                         Ok(in_json) => {
-                            println!("{:#}", in_json.dump());
+                            logln!("images", "in", "{:#}", in_json.dump());
 
                             if in_json.has_key("Filters") {
                                 let filters = &in_json["Filters"];
@@ -1873,7 +1897,7 @@ impl RicCall {
                 let user_sgs = &main_json[user_id]["SecurityGroups"];
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
-                    println!("ReadSGm in: {:#}", in_json.dump());
+                    logln!("securitygroups", "in", "{:#}", in_json.dump());
                     if in_json.has_key("Filters") {
                         let filters = &in_json["Filters"];
                         json["SecurityGroups"] = json::JsonValue::new_array();
@@ -1921,7 +1945,7 @@ impl RicCall {
                         match get_by_id!("Volumes", "VolumeId", volume_id) {
                             Ok((_, vol_idx)) => {
                                 let vol = &mut main_json[user_id]["Volumes"][vol_idx];
-                                println!("link {:#}", vol.dump());
+                                logln!("volumes", "all", "link {:#}", vol.dump());
                                 if vol["State"] != "available" && vol["State"] != "creating" {
                                     return bad_argument(req_id, json, "Volume not available")
                                 }
@@ -2121,7 +2145,7 @@ impl RicCall {
                     match in_json {
                         Ok(in_json) => {
 
-                            println!("{:#}", in_json.dump());
+                            logln!("volumes", "in", "{:#}", in_json.dump());
                             let filter = &in_json["Filters"];
 
                             json["Volumes"] = json::JsonValue::new_array();
@@ -2161,7 +2185,7 @@ impl RicCall {
             },
             RicCall::ReadConsumptionAccount  => {
                 check_aksk_auth!(auth);
-                println!("RicCall::ReadConsumptionAccount !!!");
+
                 Ok((jsonobj_to_strret(json::object!{
                     ConsumptionEntries:
                     json::array!{
@@ -2284,7 +2308,7 @@ impl RicCall {
                 check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
-                println!("DeleteSecurityGroup: {:#}", in_json.dump());
+                logln!("securitygroups", "in", "{:#}", in_json.dump());
                 let user_sgs = &mut main_json[user_id]["SecurityGroups"];
 
                 let id = optional_arg!(in_json, "SecurityGroupId", -1);
@@ -2304,7 +2328,7 @@ impl RicCall {
                 check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
-                println!("DeleteSecurityGroupRule: {:#}", in_json.dump());
+                logln!("securitygroups", "in", "{:#}", in_json.dump());
                 let flow = match require_arg!(in_json, "Flow").as_str() {
                     Some(s) => match s {
                         "Inbound" => true,
