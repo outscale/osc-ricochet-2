@@ -53,6 +53,31 @@ cargo run [-- CONFIG.json]
 
 for config see [this](./ricochet-headarches.json) and [that](./ricochet.json) as example
 
+# Logs Management
+
+## Set Logs in config
+
+```json
+{
+	"log": {
+		"scope": ["nets", "vms"],
+		"dir": "all"
+	}
+}
+```
+
+## Set Logs at runtime
+
+`"scope"` is an array of what resources you want to log, like `["nets", "vms"]`
+`"dir"` is used to set if you want to see input or output arguments, either `"in", "out" or "all"`
+
+
+Example:
+
+```bash
+curl 127.0.0.1:3000/SetLog_ -d '{"log": {"scope": ["nets"], "dir": "in"}}'
+```
+
 # ASCII Art
 ```
 [oapi-cli]
