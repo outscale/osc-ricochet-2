@@ -206,6 +206,7 @@ enum AuthType {
 enum RicCall {
     Root,
     Debug,
+    SetLog_,
 
     CreateNet,
     CreateKeypair,
@@ -316,13 +317,13 @@ enum RicCall {
 
 impl RicCall {
     fn is_free(&self) -> bool {
-        matches!(*self, RicCall::ReadPublicCatalog | RicCall::ReadRegions | RicCall::ReadPublicIpRanges | RicCall::ReadVmTypes)
+        matches!(*self, RicCall::ReadPublicCatalog | RicCall::ReadRegions | RicCall::ReadPublicIpRanges | RicCall::ReadVmTypes | RicCall::SetLog_)
     }
 
     #[allow(clippy::too_many_arguments)]
     fn eval(&self,
             mut main_json: futures::lock::MutexGuard<'_, json::JsonValue, >,
-            cfg: futures::lock::MutexGuard<'_, json::JsonValue, >,
+            mut cfg: futures::lock::MutexGuard<'_, json::JsonValue, >,
             bytes: hyper::body::Bytes,
             user_id: usize,
             req_id: usize,
@@ -536,6 +537,11 @@ impl RicCall {
                 Ok((format!("data: {}\nheaders: {}\n",
                                String::from_utf8(bytes.to_vec()).unwrap(),
                                hdr), StatusCode::OK))
+            },
+            RicCall::SetLog_ => {
+                let in_json = require_in_json!(bytes);
+                cfg["log"] = require_arg!(in_json, "log");
+                Ok((format!("log set to {}:\n", cfg["log"].dump()), StatusCode::OK))
             },
             RicCall::ReadVms  => {
                 check_aksk_auth!(auth);
@@ -3213,6 +3219,7 @@ macro_rules! catch_ric_calls {
             $(
                 concat!("/", stringify!($call)) | concat!("/api/v1/", stringify!($call)) | concat!("/api/latest/", stringify!($call)) => Ok(RicCall::$call),
             )*
+            "/SetLog_" => Ok(RicCall::SetLog_),
             "/debug" => Ok(RicCall::Debug),
             _ => Err(())
         }
