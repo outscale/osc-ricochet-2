@@ -618,7 +618,7 @@ impl RicCall {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
                         Ok(in_json) => {
-                            println!("{:#}", in_json.dump());
+                            logln!("vms", "in", "{:#}", in_json.dump());
                             if in_json.has_key("Filters") {
                                 let filter = &in_json["Filters"];
 
@@ -2165,11 +2165,7 @@ impl RicCall {
                         }
                     }
                 }
-                for vol in user_imgs.members_mut() {
-                    if vol["State"] == "creating" {
-                        vol["State"] = "available".into();
-                    }
-                }
+                update_state(user_imgs, |vol| vol["State"] == "creating", "available");
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -2200,40 +2196,17 @@ impl RicCall {
 
                 let user_fgpus = &mut main_json[user_id]["FlexibleGpus"];
 
-                for fgpu in user_fgpus.members_mut() {
-                    if fgpu["State"] == "detaching" {
-                        fgpu["State"] = "allocated".into()
-                    } else if fgpu["State"] == "attaching" {
-                        fgpu["State"] = "attached".into()
-                    }
-                }
-                json["FlexibleGpus"] = (*user_fgpus).clone();
+                update_state(user_fgpus, |fgpu| fgpu["State"] == "detaching", "allocated");
+                update_state(user_fgpus, |fgpu| fgpu["State"] == "attaching", "attached");
 
                 if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            if in_json.has_key("Filters") {
-                                let filter = &in_json["Filters"];
+                    let in_json = require_in_json!(bytes);
+                    filters_check!(in_json, user_fgpus, "FlexibleGpus",
+                                   FlexibleGpuIds, FlexibleGpuId);
 
-                                json["FlexibleGpus"] = json::JsonValue::new_array();
+                } else {
+                    json["FlexibleGpus"] = (*user_fgpus).clone();
 
-                                for fgpu in user_fgpus.members() {
-                                    let mut need_add = true;
-
-                                    need_add = have_request_filter(filter, fgpu,
-                                                                   "FlexibleGpuIds",
-                                                                   "FlexibleGpuId", need_add);
-                                    if need_add {
-                                        json["FlexibleGpus"].push((*fgpu).clone()).unwrap();
-                                    }
-                                }
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalid JSON format")
-                        }
-                    }
                 }
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
