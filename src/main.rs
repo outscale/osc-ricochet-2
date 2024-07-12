@@ -1685,7 +1685,7 @@ impl RicCall {
                 let user_nets = &mut main_json[user_id]["Nets"];
                 // TODO: check net is destroyable
                 let id = require_arg!(in_json, "NetId");
-                array_remove!(user_nets, |n| n["NetId"] == id);
+                update_state(user_nets, |n| n["NetId"] == id, "deleting");
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadKeypairs => {
@@ -1705,7 +1705,7 @@ impl RicCall {
             RicCall::ReadNets => {
                 check_aksk_auth!(auth);
 
-                let user_nets = &main_json[user_id]["Nets"];
+                let user_nets = &mut main_json[user_id]["Nets"];
 
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
@@ -1716,6 +1716,7 @@ impl RicCall {
                     json["Nets"] = (*user_nets).clone();
                 }
 
+                array_remove_3!(in_json, req_id, user_nets, |n| n["State"] == "deleting", {});
                 logln!("nets", "out", "{:#}", json.dump());
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
