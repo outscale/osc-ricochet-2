@@ -350,6 +350,14 @@ impl RicCall {
                 a["IpRanges"].members().eq(b["IpRanges"].members())
         }
 
+        fn update_state(resources: &mut json::JsonValue, f: impl Fn(&json::JsonValue) -> bool, to_state : &str) {
+            for r in resources.members_mut() {
+                if f(r) {
+                    r["State"] = to_state.into()
+                }
+            }
+        }
+
         macro_rules! array_remove_3 {
             ($json:expr, $req_id:expr, $array:expr, $predicate:expr, $then:expr) => {{
                 match $array.members().position($predicate) {
@@ -1505,11 +1513,7 @@ impl RicCall {
                 let user_cgs = &mut main_json[user_id]["ClientGateways"];
                 let id = require_arg!(in_json, "ClientGatewayId");
 
-                for cg in user_cgs.members_mut() {
-                    if cg["ClientGatewayId"] == id {
-                        cg["State"] = "deleting".into();
-                    }
-                }
+                update_state(user_cgs, |cg| cg["ClientGatewayId"] == id, "deleting");
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             }
 	    RicCall::ReadClientGateways => {
@@ -1518,43 +1522,13 @@ impl RicCall {
                 let old_cgs = main_json[user_id]["ClientGateways"].clone();
                 let user_cgs = &mut main_json[user_id]["ClientGateways"];
                 array_remove_3!(in_json, req_id, user_cgs, |n| n["State"] == "deleted", {});
-                for cg in user_cgs.members_mut() {
-                    if cg["State"] == "deleting" {
-                        cg["State"] = "deleted".into();
-                    }
-                }
+
+                update_state(user_cgs, |cg| cg["State"] == "deleting", "deleted");
 
                 if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            println!("{:#}", in_json.dump());
-                            if in_json.has_key("Filters") {
-                                let filter = &in_json["Filters"];
-                                json["ClientGateways"] = json::JsonValue::new_array();
-
-                                if !filter.is_object() {
-                                    return bad_argument(req_id, json, "Filter must be an object")
-                                }
-                                for cg in old_cgs.members() {
-                                    let mut need_add = true;
-
-                                    need_add = have_request_filter(filter, cg,
-                                                                   "ClientGatewayIds", "ClientGatewayId", need_add);
-                                    if need_add {
-                                        json["ClientGateways"].push((*cg).clone()).unwrap();
-                                    }
-                                }
-
-
-                            } else {
-                                json["ClientGateways"] = old_cgs;
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
-                    }
+                    let in_json = require_in_json!(bytes);
+                    filters_check!(in_json, &old_cgs, "ClientGateways",
+                                   ClientGatewayIds, ClientGatewayId);
                 } else {
                     json["ClientGateways"] = old_cgs;
                 }
