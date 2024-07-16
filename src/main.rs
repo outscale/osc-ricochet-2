@@ -301,6 +301,7 @@ enum RicCall {
     LinkPublicIp,
     LinkFlexibleGpu,
     LinkVirtualGateway,
+    LinkNic,
 
     UnlinkFlexibleGpu,
     UnlinkInternetService,
@@ -308,6 +309,7 @@ enum RicCall {
     UnlinkVolume,
     UnlinkPublicIp,
     UnlinkVirtualGateway,
+    UnlinkNic,
 
     UpdateVm,
     UpdateImage,
@@ -540,6 +542,23 @@ impl RicCall {
                     }
                 }
             }}
+        }
+
+        macro_rules! link_nic {
+            ($nic:expr, $device_number:expr) => {{
+                if $nic.has_key("LinkNic") {
+                    return bad_argument(req_id, json, format!("Nic id {} is already linked", $nic["NicId"]).as_str())
+                }
+                if $nic["State"] != "available" {
+                    return bad_argument(req_id, json, "Nic must be in the `available` state")
+                }
+                let id: u32 = thread_rng().gen();
+                $nic["LinkNic"] = json::object!{
+                    "State": "attached",
+                    DeviceNumber: $device_number,
+                    "LinkNicId": format!("eni-attach-{:08x}", id)
+                };
+            }};
         }
 
         macro_rules! check_conflict {
@@ -3234,6 +3253,71 @@ impl RicCall {
 
             json["NetAccessPoints"] = (*net_access_points).clone();
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+        },
+        RicCall::LinkNic => {
+            check_aksk_auth!(auth);
+            let in_json = require_in_json!(bytes);
+            logln!("nics", "in", "{:#}", in_json.dump());
+
+            let device_number = require_arg!(in_json, "DeviceNumber").as_i32().unwrap();
+            let nic_id = require_arg!(in_json, "NicId");
+            let vm_id = require_arg!(in_json, "VmId");
+            let (vm_idx, vm) = match get_by_id!("Vms", "VmId", vm_id) {
+                Ok((_, idx)) => (idx, &main_json[user_id]["Vms"][idx]),
+                _ => return bad_argument(req_id, json, "Vm not found")
+            };
+            if vm["State"] != "running" && vm["State"] != "stopped" {
+                return bad_argument(req_id, json, "the VM should be either `running` or `stopped`")
+            }
+            if vm.has_key("Nics") {
+                return bad_argument(req_id, json, "the VM is already linked to a Nic")
+            }
+            if !(1..=7).contains(&device_number) {
+                return bad_argument(req_id, json, "the device number should be between 1 and 7, both included")
+            }
+           
+            let nic = match get_by_id!("Nics", "NicId", nic_id) {
+                Ok((_, idx)) => &mut main_json[user_id]["Nics"][idx],
+                _ => return bad_argument(req_id, json, "Nic not found")
+            };
+            link_nic!(nic, device_number);
+            
+            json["LinkNicId"] = nic["LinkNic"]["LinkNicId"].clone();
+            main_json[user_id]["Vms"][vm_idx]["Nics"] = json::array!{ nic.clone() };
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
+        },
+        RicCall::UnlinkNic => {
+            check_aksk_auth!(auth);
+            let in_json = require_in_json!(bytes);
+            logln!("nics", "in", "{:#}", in_json.dump());
+
+            let linknic_id = require_arg!(in_json, "LinkNicId");
+            let nic_idx = match main_json[user_id]["Nics"].members_mut().position(|nic| 
+                nic["LinkNic"]["LinkNicId"] == linknic_id && nic["LinkNic"]["DeviceNumber"] != 0) 
+            {
+                Some(idx) => idx,
+                None => return bad_argument(req_id, json, "Nic not found or is a primary Nic")
+            };
+            main_json[user_id]["Nics"][nic_idx].remove("LinkNic");
+
+            let get_vm_niclink_idx = || -> Option<(usize, usize)> {
+                for (vm_idx, vm) in main_json[user_id]["Vms"].members().enumerate() {
+                    if let Some(nic_idx) = vm["Nics"].members().position(|nic| nic["LinkNic"]["LinkNicId"] == linknic_id) {
+                        return Some((vm_idx, nic_idx));
+                    }
+                }
+                None
+            };
+            let (vm_idx, nic_idx) = get_vm_niclink_idx().unwrap();
+            // When no more Nics are linked to a VM the Nics object stored inside the VM needs to be deleted
+            if main_json[user_id]["Vms"][vm_idx]["Nics"].len() == 1 { 
+                main_json[user_id]["Vms"][vm_idx].remove("Nics"); 
+            }
+            else {
+                main_json[user_id]["Vms"][vm_idx]["Nics"].array_remove(nic_idx);
+            }
+
+            Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         }
     }
 }
@@ -3361,7 +3445,9 @@ impl FromStr for RicCall {
             DeleteVirtualGateway,
             CreateNetAccessPoint,
             DeleteNetAccessPoint,
-            ReadNetAccessPoints
+            ReadNetAccessPoints,
+            LinkNic,
+            UnlinkNic
         )
     }
 }
