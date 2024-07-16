@@ -574,6 +574,113 @@ impl RicCall {
                 }
             }};
         }
+        
+        macro_rules! create_nic {
+            ($in_json:expr) => {{
+                let subnet_id = require_arg!($in_json, "SubnetId");
+                let subnet = match get_by_id!("Subnets", "SubnetId", subnet_id) {
+                    Ok((_, idx)) => &main_json[user_id]["Subnets"][idx],
+                    _ => return bad_argument(req_id, json, format!("can't find subnet id {}", subnet_id).as_str())
+                };
+                let nic_id: u32 = thread_rng().gen();
+                let mut nic = json::object!{
+                    SubregionName: get_default_subregion(&cfg),
+                    SubnetId: subnet_id.clone(),
+                    "State": "available",
+                    "IsSourceDestChecked": true,
+                    "PrivateDnsName": "",
+                    "Tags": json::array!{},
+                    Description: optional_arg!($in_json, "Description", ""),
+                    AccountId: format!("{:012x}", user_id),
+                    SecurityGroups: json::array!{},
+                    "MacAddress": "A1:B2:C3:D4:E5:F6",
+                    NetId: subnet["NetId"].clone(),
+                    NicId: format!("eni-{:08x}", nic_id),
+                    PrivateIps: json::array!{}
+                };
+
+                let subnet_st: Ipv4Net = subnet["IpRange"].as_str().unwrap().parse().unwrap();
+                let mut used_ips = used_ips_of_subnet!(&subnet_id);
+                let mut has_primary_in_req = false;
+                if $in_json.has_key("PrivateIps") {
+                    let mut private_ips = json::array!();
+                    for ip_light in $in_json["PrivateIps"].members() {
+                        let private_ip = require_arg!(ip_light, "PrivateIp");
+                        let is_primary = optional_arg!(ip_light, "IsPrimary", false);
+                        let private_ip_block = json::object!{
+                            PrivateDnsName: format!("ip-{}.{}.compute.internal", private_ip, get_region(&cfg)),
+                            PrivateIp: private_ip.clone(),
+                            IsPrimary: is_primary.clone(),
+                        };
+
+                        if is_primary.as_bool().unwrap() {
+                            if has_primary_in_req {
+                                return bad_argument(req_id, json, "only one private ip can be set primary")
+                            }
+                            has_primary_in_req = true;
+                            nic["PrivateDnsName"] = private_ip_block["PrivateDnsName"].clone();
+                        }
+
+                        let net_st: Result<Ipv4Addr, _> = private_ip.as_str().unwrap().parse();
+                        match net_st {
+                            Ok(range) => {
+                                if !subnet_st.contains(&range) {
+                                    return bad_argument(req_id, json, "private ip is not within the subnet range")
+                                }
+                                if used_ips.len() == usize::try_from(hosts_of_netmask(subnet_st.prefix_len())).unwrap() {
+                                    return bad_argument(req_id, json, "all private ips used for subnet")
+                                }
+                                if used_ips.members().any(|ip| private_ip == *ip) {
+                                    return bad_argument(req_id, json, "private ip already in use in subnet");
+                                }
+                                if private_ips.members().any(|ip_block| private_ip == ip_block["PrivateIp"]) {
+                                    return bad_argument(req_id, json, "private ips need to be exclusive");
+                                }
+
+                                private_ips.push(private_ip_block).unwrap();
+                            },
+                            _ => return bad_argument(req_id, json, "you range is pure &@*$ i mean invalid")
+                        }
+                    }
+                    nic["PrivateIps"] = private_ips.clone();
+                }
+                if !has_primary_in_req {
+                    used_ips = used_ips_of_subnet!(&subnet_id);
+                    let mut used_ips_req = json::array!();
+                    for pip in nic["PrivateIps"].members() {
+                        used_ips_req.push(pip["PrivateIp"].clone()).unwrap();
+                    }
+                    let mut hosts = subnet_st.hosts();
+                    let private_ip = match hosts.find(|ip| !used_ips.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())
+                                                      && !used_ips_req.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())) {
+                        Some(pip) => pip,
+                        _ => return bad_argument(req_id, json, "all private ips used")
+                    };
+                    let private_ip_block = json::object!{
+                        PrivateDnsName: format!("ip-{}.{}.compute.internal", private_ip, get_region(&cfg)),
+                        PrivateIp: private_ip.to_string(),
+                        IsPrimary: true,
+                    };
+                    nic["PrivateDnsName"] = private_ip_block["PrivateDnsName"].clone();
+                    nic["PrivateIps"].push(private_ip_block).unwrap();
+                }
+                if $in_json.has_key("SecurityGroupIds")  {
+                    add_security_group!($in_json, req_id, nic);
+                }
+                nic
+            }};
+        }
+
+        macro_rules! update_vm_nic_creation {
+            ($vm:expr, $nic:expr) => {{
+                $vm["SubnetId"] = $nic["SubnetId"].clone();
+                $vm["NetId"] = $nic["NetId"].clone();
+                if let Some (pip) = $nic["PrivateIps"].members().find(|pip| pip["IsPrimary"].as_bool().unwrap()) {
+                    $vm["PrivateIp"] = pip["PrivateIp"].clone();
+                    $vm["PrivateDnsName"] = pip["PrivateDnsName"].clone();
+                };
+            }};
+        }
 
         macro_rules! check_aksk_auth {
             ($auth:expr) => {{
@@ -2543,16 +2650,9 @@ impl RicCall {
             },
             RicCall::CreateVms => {
                 check_aksk_auth!(auth);
-                let vm_id = format!("i-{:08x}", req_id);
-                let in_json = match json::parse(std::str::from_utf8(&bytes).unwrap()) {
-                    Ok(in_json) => in_json,
-                    Err(_) => {
-                        json::object!{}
-                    }
-                };
-
-                // {"BootOnCreation":true,"DeletionProtection":false,"ImageId":"ami-cd8d714e","KeypairName":"deployer","MaxVmsCount":1,"MinVmsCount":1,"NestedVirtualization":false,"SecurityGroupIds":["sg-ffffff00"],"SubnetId":"subnet-00000008","VmType":"tinav4.c1r1p2"}
+                let in_json = require_in_json!(bytes);
                 logln!("vms", "in", "{:#}", in_json.dump());
+                // {"BootOnCreation":true,"DeletionProtection":false,"ImageId":"ami-cd8d714e","KeypairName":"deployer","MaxVmsCount":1,"MinVmsCount":1,"NestedVirtualization":false,"SecurityGroupIds":["sg-ffffff00"],"SubnetId":"subnet-00000008","VmType":"tinav4.c1r1p2"}
 
                 // Vreate Volumes, should be optional TODO
                 let mut vol = json::array![
@@ -2594,7 +2694,7 @@ impl RicCall {
                             }
                         }
                     ],
-                    VmId: vm_id,
+                    VmId: format!("i-{:08x}", req_id),
                     Placement: {
                         Tenancy: "default",
                         SubregionName: get_default_subregion(&cfg),
@@ -2663,12 +2763,54 @@ impl RicCall {
                         }
                     ];
                 }
-                main_json[user_id]["Vms"].push(
-                    vm.clone()).unwrap();
-                for v in vol.members() {
-                    main_json[user_id]["Volumes"].push(
-                        v.clone()).unwrap();
+                let mut created_nics = Vec::new();
+                if in_json.has_key("SubnetId") {
+                    if in_json.has_key("Nics") {
+                        return bad_argument(req_id, json, "can't have the `Nics` parameter if you specify a `SubnetId`")
+                    }
+                    let mut nic = create_nic!(in_json);
+                    update_vm_nic_creation!(vm, nic);
+                    link_nic!(nic, 0);
+                    nic["LinkNic"]["DeleteOnVmDeletion"] = true.into();
+
+                    created_nics.push(nic.clone());
+                    vm["Nics"] = json::array!{ nic };
                 }
+                if in_json.has_key("Nics") {
+                    vm["Nics"] = json::array!{};
+                    for nic_for_vm_creation in in_json["Nics"].members() {
+                        if nic_for_vm_creation.has_key("NicId") {
+                            let nic = match get_by_id!("Nics", "NicId", nic_for_vm_creation["NicId"]) {
+                                Ok((_, idx)) => &mut main_json[user_id]["Nics"][idx],
+                                Err(_) => return bad_argument(req_id, json, format!("can't find the Nic id {}", nic_for_vm_creation["NicId"]).as_str())
+                            };
+                            update_vm_nic_creation!(vm, nic);
+                            link_nic!(nic, 0);
+                            nic["LinkNic"]["DeleteOnVmDeletion"] = false.into();
+
+                            vm["Nics"].push(nic.clone()).unwrap();
+                        }
+                        else {
+                            let device_number = require_arg!(nic_for_vm_creation, "DeviceNumber").as_i32().unwrap();
+                            if !(0..=7).contains(&device_number) {
+                                return bad_argument(req_id, json, "the device number should be between 0 and 7, both included")
+                            }
+                            let mut nic = create_nic!(nic_for_vm_creation);
+                            update_vm_nic_creation!(vm, nic);
+                            link_nic!(nic, device_number);
+                            nic["LinkNic"]["DeleteOnVmDeletion"] = optional_arg!(nic_for_vm_creation, "DeleteOnVmDeletion", true);
+
+                            created_nics.push(nic.clone());
+                            vm["Nics"].push(nic.clone()).unwrap();
+                        }
+                    }
+                }
+                for nic in created_nics {
+                    main_json[user_id]["Nics"].push(nic).unwrap();
+                }
+
+                main_json[user_id]["Vms"].push(vm.clone()).unwrap();
+                vol.members().for_each(|v| main_json[user_id]["Volumes"].push(v.clone()).unwrap());
                 json["Vms"] = json::array!{vm};
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -2815,96 +2957,7 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
                 logln!("nics", "in", "{:#}", in_json.dump());
 
-                let subnet_id = require_arg!(in_json, "SubnetId");
-                let subnet = match get_by_id!("Subnets", "SubnetId", subnet_id) {
-                    Ok((_, idx)) => &main_json[user_id]["Subnets"][idx],
-                    _ => return bad_argument(req_id, json, format!("can't find subnet id {}", subnet_id).as_str())
-                };
-
-                let mut nic = json::object!{
-                    SubregionName: get_default_subregion(&cfg),
-                    SubnetId: subnet_id.clone(),
-                    "State": "available",
-                    "IsSourceDestChecked": true,
-                    "PrivateDnsName": "",
-                    "Tags": json::array!{},
-                    Description: optional_arg!(in_json, "Description", ""),
-                    AccountId: format!("{:012x}", user_id),
-                    SecurityGroups: json::array!{},
-                    "MacAddress": "A1:B2:C3:D4:E5:F6",
-                    NetId: subnet["NetId"].clone(),
-                    NicId: format!("eni-{:08x}", req_id),
-                    PrivateIps: json::array!{}
-                };
-
-                let subnet_st: Ipv4Net = subnet["IpRange"].as_str().unwrap().parse().unwrap();
-                let mut used_ips = used_ips_of_subnet!(&subnet_id);
-                let mut has_primary_in_req = false;
-                if in_json.has_key("PrivateIps") {
-                    let mut private_ips = json::array!();
-                    for ip_light in in_json["PrivateIps"].members() {
-                        let private_ip = require_arg!(ip_light, "PrivateIp");
-                        let is_primary = optional_arg!(ip_light, "IsPrimary", false);
-                        let private_ip_block = json::object!{
-                            PrivateDnsName: format!("{}.{}.compute.internal", private_ip, get_region(&cfg)),
-                            PrivateIp: private_ip.clone(),
-                            IsPrimary: is_primary.clone(),
-                        };
-
-                        if is_primary.as_bool().unwrap() {
-                            if has_primary_in_req {
-                                return bad_argument(req_id, json, "only one private ip can be set primary")
-                            }
-                            has_primary_in_req = true;
-                            nic["PrivateDnsName"] = private_ip_block["PrivateDnsName"].clone();
-                        }
-
-                        let net_st: Result<Ipv4Addr, _> = private_ip.as_str().unwrap().parse();
-                        match net_st {
-                            Ok(range) => {
-                                if !subnet_st.contains(&range) {
-                                    return bad_argument(req_id, json, "private ip is not within the subnet range")
-                                }
-                                if used_ips.len() == usize::try_from(hosts_of_netmask(subnet_st.prefix_len())).unwrap() {
-                                    return bad_argument(req_id, json, "all private ips used for subnet")
-                                }
-                                if used_ips.members().any(|ip| private_ip == *ip) {
-                                    return bad_argument(req_id, json, "private ip already in use in subnet");
-                                }
-                                if private_ips.members().any(|ip_block| private_ip == ip_block["PrivateIp"]) {
-                                    return bad_argument(req_id, json, "private ips need to be exclusive");
-                                }
-
-                                private_ips.push(private_ip_block).unwrap();
-                            },
-                            _ => return bad_argument(req_id, json, "you range is pure &@*$ i mean invalid")
-                        }
-                    }
-                    nic["PrivateIps"] = private_ips.clone();
-                }
-                if !has_primary_in_req {
-                    used_ips = used_ips_of_subnet!(&subnet_id);
-                    let mut used_ips_req = json::array!();
-                    for pip in nic["PrivateIps"].members() {
-                        used_ips_req.push(pip["PrivateIp"].clone()).unwrap();
-                    }
-                    let mut hosts = subnet_st.hosts();
-                    let private_ip = match hosts.find(|ip| !used_ips.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())
-                                                      && !used_ips_req.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())) {
-                        Some(pip) => pip,
-                        _ => return bad_argument(req_id, json, "all private ips used")
-                    };
-                    let private_ip_block = json::object!{
-                        PrivateDnsName: format!("{}.{}.compute.internal", private_ip, get_region(&cfg)),
-                        PrivateIp: private_ip.to_string(),
-                        IsPrimary: true,
-                    };
-                    nic["PrivateDnsName"] = private_ip_block["PrivateDnsName"].clone();
-                    nic["PrivateIps"].push(private_ip_block).unwrap();
-                }
-                if in_json.has_key("SecurityGroupIds")  {
-                    add_security_group!(in_json, req_id, nic);
-                }
+                let nic = create_nic!(in_json); 
 
                 main_json[user_id]["Nics"].push(nic.clone()).unwrap();
                 json["Nic"] = nic.clone();
