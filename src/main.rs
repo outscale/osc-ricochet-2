@@ -749,7 +749,7 @@ impl RicCall {
                     match in_json {
                         Ok(in_json) => {
                             // need refacto using user_vms.members().filter(FIND and do json["Vms"].push((*vm)).for_each(REMOVE)
-                            println!("{:#}", in_json.dump());
+                            logln!("vms", "in", "{:#}", in_json.dump());
                             if in_json.has_key("VmIds") {
                                 let ids = &in_json["VmIds"];
 
@@ -932,8 +932,8 @@ impl RicCall {
             },
 	    RicCall::UpdateImage => {
                 check_aksk_auth!(auth);
-		let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                let in_json = require_in_json!(bytes);
+                logln!("images", "in", "{:#}", in_json.dump());
                 let image_id = require_arg!(in_json, "ImageId");
 		let image = match get_by_id!("Images", "ImageId", image_id) {
                     Ok((_, idx)) => &mut main_json[user_id]["Images"][idx],
@@ -977,8 +977,8 @@ impl RicCall {
                 }
 
 
-                println!("{:#}", image.dump());
 		json["Image"] = image.clone();
+                logln!("images", "out", "{:#}", json.dump());
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 	    },
 	    RicCall::DeleteImage => {
@@ -986,6 +986,7 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
 		println!("{:#}", in_json.dump());
                 let user_imgs = &mut main_json[user_id]["Images"];
+
 		let id = require_arg!(in_json, "ImageId");
 		array_remove!(user_imgs, |n| n["ImageId"] == id &&
 		    n["AccountId"] == format!("{:012x}", user_id)
@@ -1032,15 +1033,13 @@ impl RicCall {
                     json["ImageExportTasks"] = (*user_iets).clone();
                 }
 
-                println!("{:#}", json.dump());
-
-
+                logln!("images", "out", "{:#}", json.dump());
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateImageExportTask => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("images", "in", "{:#}", in_json.dump());
                 let img_id = require_arg!(in_json, "ImageId");
                 match main_json[user_id]["Images"].members().find(|img| img["ImageId"] == img_id) {
                     Some(_) => {}
@@ -1112,7 +1111,7 @@ impl RicCall {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
                         Ok(in_json) => {
-			    println!("{:#}", in_json.dump());
+                            logln!("images", "in", "{:#}", in_json.dump());
                             if in_json.has_key("ImageName") {
                                 image["ImageName"] = in_json["ImageName"].clone();
                             }
@@ -1575,8 +1574,7 @@ impl RicCall {
             RicCall::LinkPublicIp => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-
-                println!("{:#}", in_json.dump());
+                logln!("publicips", "in", "{:#}", in_json.dump());
 
                 let ip = format!("eipassoc-{:08x}", req_id);
                 let ip_id = if in_json.has_key("PublicIp") {
@@ -1625,7 +1623,7 @@ impl RicCall {
             RicCall::UnlinkPublicIp => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("publicips", "in", "{:#}", in_json.dump());
                 if in_json.has_key("PublicIpId") {
                     let id = require_arg!(in_json, "PublicIpId");
 
@@ -1662,7 +1660,7 @@ impl RicCall {
             RicCall::UnlinkInternetService => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("internetservices", "in", "{:#}", in_json.dump());
                 let id = require_arg!(in_json, "InternetServiceId");
                 let net_id = require_arg!(in_json, "NetId");
 
@@ -1691,7 +1689,7 @@ impl RicCall {
             RicCall::DeletePublicIp => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("publicips", "in", "{:#}", in_json.dump());
                 let user_iwgs = &mut main_json[user_id]["PublicIps"];
                 // TODO: check net is destroyable
                 let id = require_arg!(in_json, "PublicIpId");
@@ -2415,7 +2413,7 @@ impl RicCall {
                 check_aksk_auth!(auth);
 
                 let in_json = require_in_json!(bytes);
-                println!("CreateSecurityGroupRule: {:#}", in_json.dump());
+                logln!("securitygroups", "in", "{:#}", in_json.dump());
                 let sg_id = match in_json.has_key("SecurityGroupId") {
                     true => in_json["SecurityGroupId"].clone(),
                     _ => return bad_argument(req_id, json, "SecurityGroupId required")
@@ -2506,7 +2504,7 @@ impl RicCall {
             RicCall::UpdateVm => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("vms", "in", "{:#}", in_json.dump());
                 let vm_id = require_arg!(in_json, "VmId");
                 json["ricochet-info"] = format!("vm id: {}, but update vm barly implemented", vm_id).into();
                 let vm = match get_by_id!("Vms", "VmId", vm_id) {
@@ -2537,7 +2535,7 @@ impl RicCall {
                 };
 
                 // {"BootOnCreation":true,"DeletionProtection":false,"ImageId":"ami-cd8d714e","KeypairName":"deployer","MaxVmsCount":1,"MinVmsCount":1,"NestedVirtualization":false,"SecurityGroupIds":["sg-ffffff00"],"SubnetId":"subnet-00000008","VmType":"tinav4.c1r1p2"}
-                println!("{:#}", in_json.dump());
+                logln!("vms", "in", "{:#}", in_json.dump());
 
                 // Vreate Volumes, should be optional TODO
                 let mut vol = json::array![
@@ -2660,7 +2658,7 @@ impl RicCall {
             RicCall::CreateTags|RicCall::DeleteTags => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("tags", "in", "{:#}", in_json.dump());
                 if !in_json.has_key("Tags") && !in_json.has_key("ResourceIds") {
                     return bad_argument(req_id, json, "CreateTags/DeleteTags require: ResourceIds, Tags argument");
                 }
@@ -2722,7 +2720,7 @@ impl RicCall {
                         };
                     }
                 }
-                println!("CreateTags");
+                logln!("tags", "in", "CreateTags");
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadQuotas => {
@@ -2790,16 +2788,15 @@ impl RicCall {
                     SubregionName: subregion_name,
                 };
 
-
-                println!("CreateFlexibleGpu {:#}", fgpu_json.dump());
                 json["FlexibleGpu"] = fgpu_json.clone();
+                logln!("flexiblegpus", "out", "{:#}", json.dump());
                 user_fgpu.push(fgpu_json).unwrap();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateNic => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("nics", "in", "{:#}", in_json.dump());
 
                 let subnet_id = require_arg!(in_json, "SubnetId");
                 let subnet = match get_by_id!("Subnets", "SubnetId", subnet_id) {
@@ -2917,7 +2914,7 @@ impl RicCall {
             RicCall::CreateNetPeering => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("netpeerings", "in", "{:#}", in_json.dump());
 
                 let accepter_net_id = require_arg!(in_json, "AccepterNetId");
                 let source_net_id = require_arg!(in_json, "SourceNetId");
@@ -3006,7 +3003,7 @@ impl RicCall {
             RicCall::AcceptNetPeering => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("netpeerings", "in", "{:#}", in_json.dump());
 
                 let net_peering_id = require_arg!(in_json, "NetPeeringId");
 
@@ -3055,7 +3052,7 @@ impl RicCall {
             RicCall::RejectNetPeering => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("netpeerings", "in", "{:#}", in_json.dump());
 
                 let net_peering_id = require_arg!(in_json, "NetPeeringId");
 
@@ -3073,7 +3070,7 @@ impl RicCall {
             RicCall::DeleteNetPeering => {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
-                println!("{:#}", in_json.dump());
+                logln!("netpeerings", "in", "{:#}", in_json.dump());
 
                 let net_peering_id = require_arg!(in_json, "NetPeeringId");
                 let is_request_owner = |net_peering: &JsonValue| net_peering["SourceNet"]["AccountId"].as_str().unwrap() == format!("{:012x}", user_id);
@@ -3102,7 +3099,7 @@ impl RicCall {
         RicCall::CreateVirtualGateway => {
             check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
-            println!("{:#}", in_json.dump());
+            logln!("virtualgateways", "in", "{:#}", in_json.dump());
 
             let virtual_gateway = json::object!{
                 VirtualGatewayId: format!("vgw-{:08x}", req_id),
@@ -3130,7 +3127,7 @@ impl RicCall {
         RicCall::LinkVirtualGateway => {
             check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
-            println!("{:#}", in_json.dump());
+            logln!("virtualgateways", "in", "{:#}", in_json.dump());
 
             let virtual_gateway_id = require_arg!(in_json, "VirtualGatewayId");
             let net_id = require_arg!(in_json, "NetId");
@@ -3157,7 +3154,7 @@ impl RicCall {
         RicCall::UnlinkVirtualGateway => {
             check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
-            println!("{:#}", in_json.dump());
+            logln!("virtualgateways", "in", "{:#}", in_json.dump());
 
             let virtual_gateway_id = require_arg!(in_json, "VirtualGatewayId");
             let net_id = require_arg!(in_json, "NetId");
@@ -3184,7 +3181,7 @@ impl RicCall {
         RicCall::DeleteVirtualGateway => {
             check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
-            println!("{:#}", in_json.dump());
+            logln!("virtualgateways", "in", "{:#}", in_json.dump());
             let virtual_gateways = &mut main_json[user_id]["VirtualGateways"];
 
             let virtual_gateway_id = require_arg!(in_json, "VirtualGatewayId");
@@ -3195,7 +3192,7 @@ impl RicCall {
         RicCall::CreateNetAccessPoint => {
             check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
-            println!("{:#}", in_json.dump());
+            logln!("netaccesspoints", "in", "{:#}", in_json.dump());
 
             let mut net_access_point = json::object! {
                 "Tags": [],
@@ -3238,7 +3235,7 @@ impl RicCall {
         RicCall::DeleteNetAccessPoint => {
             check_aksk_auth!(auth);
             let in_json = require_in_json!(bytes);
-            println!("{:#}", in_json.dump());
+            logln!("netaccesspoints", "in", "{:#}", in_json.dump());
 
             let net_access_point_id = require_arg!(in_json, "NetAccessPointId");
             let net_access_points = &mut main_json[user_id]["NetAccessPoints"];
