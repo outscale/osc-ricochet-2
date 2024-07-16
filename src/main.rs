@@ -447,7 +447,8 @@ impl RicCall {
         }
 
         fn hosts_of_netmask(netmask: u8) -> u32 {
-            2u32.pow((32 - netmask).into())
+            // There are 5 reserved IPs, not handled yet in Private IP generation
+            2u32.pow((32 - netmask).into()) - 5
         }
 
         macro_rules! logln {
