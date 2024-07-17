@@ -1503,24 +1503,28 @@ impl RicCall {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let net_id = require_arg!(in_json, "NetId");
-                let mut rt = json::object!{
+
+                let net = match get_by_id!("Nets", "NetId", net_id) {
+                    Ok((t, idx)) => &main_json[user_id][t][idx],
+                    _ => return bad_argument(req_id, json, "Net not found")
+                };
+
+                let rt = json::object!{
                     Tags: json::array!{},
                     RoutePropagatingVirtualGateways: json::array!{},
                     LinkRouteTables: json::array!{},
                     Routes: json::array!{
                         json::object!{
-                            DestinationIpRange: "10.0.0.0/16",
+                            "GatewayId":"local",
+                            DestinationIpRange: net["IpRange"].clone(),
                             CreationMethod: "CreateRouteTable",
                             State: "active"
                         },
                     },
+                    NetId: net["NetId"].clone(),
                     RouteTableId: format!("rtb-{:08x}", req_id)
                 };
 
-                match get_by_id!("Nets", "NetId", net_id) {
-                    Ok(_) => {rt["NetId"] = net_id},
-                    _ => return bad_argument(req_id, json, "Net not found")
-                }
                 main_json[user_id]["RouteTables"].push(
                     rt.clone()).unwrap();
                 json["RouteTable"] = rt;
