@@ -488,12 +488,18 @@ impl RicCall {
             }}
         }
 
-        macro_rules! get_by_id {
-            ($resource_type:expr, $id_name:expr, $id:expr) => {{
+        macro_rules! get_by_id_2 {
+            ($resource_type:expr, $id_name:expr, $id:expr, $then_err:expr) => {{
                 match main_json[user_id][$resource_type].members().position(|m| m[$id_name] == $id) {
                     Some(idx) => Ok(($resource_type, idx)),
-                    None => Err(bad_argument(req_id, json.clone(), "Element id not found"))
+                    None => $then_err
                 }
+            }}
+        }
+
+        macro_rules! get_by_id {
+            ($resource_type:expr, $id_name:expr, $id:expr) => {{
+                get_by_id_2!($resource_type, $id_name, $id, Err(bad_argument(req_id, json.clone(), "Element id not found")))
             }}
         }
 
