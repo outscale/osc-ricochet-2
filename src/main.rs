@@ -1364,15 +1364,20 @@ impl RicCall {
             },
             RicCall::CreateNatService => {
                 check_aksk_auth!(auth);
-                let user = &mut main_json[user_id];
                 let in_json = require_in_json!(bytes);
                 let ip_id = require_arg!(in_json, "PublicIpId");
                 let subnet_id = require_arg!(in_json, "SubnetId");
-                let ip = match user["PublicIps"].members().find(|ip| ip_id == ip["PublicIpId"]) {
+
+                let ip = match main_json[user_id]["PublicIps"].members().find(|ip| ip_id == ip["PublicIpId"]) {
                     Some(ip) => ip,
-                    _ => return bad_argument(req_id, json, "CreateNatService doesn't corespond to an existing id")
+                    _ => return bad_argument(req_id, json, "PublicIpId doesn't correspond to an existing id")
+                };
+                let net_id = match get_by_id!("Subnets", "SubnetId", subnet_id) {
+                    Ok((t, idx)) => main_json[user_id][t][idx]["NetId"].clone(),
+                    _ => return bad_argument(req_id, json, "Subnet not found")
                 };
                 let nat_service = json::object!{
+                    "Tags": [],
                     SubnetId: subnet_id,
                     State: "available",
                     PublicIps: [
@@ -1381,6 +1386,7 @@ impl RicCall {
                             PublicIp: ip["PublicIp"].clone()
                         }
                     ],
+                    NetId: net_id,
                     NatServiceId: format!("nat-{:08x}", req_id)
                 };
 
