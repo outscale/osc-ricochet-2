@@ -1495,20 +1495,65 @@ impl RicCall {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let rt_id = require_arg!(in_json, "RouteTableId");
-                let new_route = json::object!{
-                    DestinationIpRange: require_arg!(in_json, "DestinationIpRange"),
+                let destination_ip_range = require_arg!(in_json, "DestinationIpRange");
+
+                if destination_ip_range.as_str().unwrap().parse::<Ipv4Net>().is_err() {
+                    return bad_argument(req_id, json, "Invalid destination ip range")
+                }
+                let (rt_idx, net_id) = match get_by_id!("RouteTables", "RouteTableId", rt_id) {
+                    Ok((t, rt_idx)) => (rt_idx, main_json[user_id][t][rt_idx]["NetId"].clone()),
+                    _ => return bad_argument(req_id, json, "Route table not found")
+                };
+                let mut new_route = json::object!{
+                    DestinationIpRange: destination_ip_range,
                     CreationMethod: "CreateRoute",
                     State: "active"
                 };
-                match get_by_id!("RouteTables", "RouteTableId", rt_id) {
-                    Ok((_, rt_idx)) => {
-                        let rt = &mut main_json[user_id]["RouteTables"][rt_idx];
-                        rt["Routes"].push(new_route).unwrap();
-                        json["RouteTable"] = rt.clone();
-                    },
-                    _ => return bad_argument(req_id, json, "Net not found")
+                let mut target_count = 0;
+                macro_rules! set_route {
+                    ($target:expr, $resource:expr, $id_name:expr, $fun:expr) => {
+                        if in_json.has_key($target) {
+                            if target_count > 0 {
+                                return bad_argument(req_id, json, "Only one target resource is allowed")
+                            }
+                            target_count += 1;
+                            match get_by_id_2!($resource, $id_name, in_json[$target], Err(())) {
+                                Ok ((_, id)) => {
+                                    let el = &main_json[user_id][$resource][id];
+                                    if $fun (&el) {
+                                        new_route[$target] = el[$id_name].clone();
+                                    }
+                                    else {
+                                        return bad_argument(req_id, json, format!("{} is not in the RouteTable's net or is invalid", el[$id_name]).as_str())
+                                    }
+                                },
+                                _ => return bad_argument(req_id, json, "Resource not found")
+                            }
+                        }
+                    };
+                }
+                set_route!("NatServiceId", "NatServices", "NatServiceId", |nat: &JsonValue| nat["NetId"] == net_id);
+                set_route!("NetPeeringId", "NetPeerings", "NetPeeringId", |net_p: &JsonValue| net_p["AccepterNet"]["NetId"] == net_id || net_p["SourceNet"]["NetId"] == net_id);
+                set_route!("NicId", "Nics", "NicId", |nic: &JsonValue| nic["NetId"] == net_id);
+                set_route!("VmId", "Vms", "VmId", |vm: &JsonValue| vm.has_key("Nics") && vm["Nics"].len() == 1 && vm["NetId"] == net_id);
+                if in_json.has_key("GatewayId") {
+                    if in_json["GatewayId"].as_str().unwrap().starts_with("vgw-") {
+                        set_route!("GatewayId", "VirtualGateways", "VirtualGatewayId", |gw: &JsonValue| gw["NetToVirtualGatewayLinks"].members().any(|link| link["NetId"] == net_id));
+                    } else {
+                        set_route!("GatewayId", "InternetServices", "InternetServiceId", |gw: &JsonValue| gw["NetId"] == net_id);
+                    }
                 }
 
+                if target_count == 0 {
+                    return bad_argument(req_id, json, "At least one target resource is needed")
+                }
+                let rt = &mut main_json[user_id]["RouteTables"][rt_idx];
+
+                if rt["Routes"].members().any(|route| route == &new_route || route["DestinationIpRange"] == new_route["DestinationIpRange"]) {
+                    return bad_argument(req_id, json, "Route already exists or DestinationIpRange in use")
+                }
+                rt["Routes"].push(new_route.clone()).unwrap();
+                json["RouteTable"] = rt.clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateRouteTable => {
