@@ -1332,10 +1332,9 @@ impl RicCall {
             },
             RicCall::CreateNet => {
                 check_aksk_auth!(auth);
-                let net_id = format!("vpc-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
                 let mut net = json::object!{
-                    NetId: net_id,
+                    NetId: format!("vpc-{:08x}", req_id),
                     State: "available",
                     DhcpOptionsSetId: "unimplemented",
                     Tags: json::array!{},
@@ -1359,6 +1358,9 @@ impl RicCall {
                 } else {
                     return bad_argument(req_id, json, "l'IpRange wesh !");
                 }
+                main_json[user_id]["SecurityGroups"].push(
+                    create_security_group!(Some(net["NetId"].clone()), "default", "default security group")
+                ).unwrap();
                 main_json[user_id]["Nets"].push(
                     net.clone()).unwrap();
                 json["Net"] = net;
@@ -2830,16 +2832,6 @@ impl RicCall {
                         vm["Placement"]["Tenancy"] = in_placement["Tenancy"].clone();
                     }
                 }
-                if in_json.has_key("SecurityGroupIds") || in_json.has_key("SecurityGroups") {
-                    add_security_group!(in_json, req_id, vm);
-                } else {
-                    vm["SecurityGroups"] = json::array![
-                        json::object!{
-                            "SecurityGroupName": "default",
-                            "SecurityGroupId": format!("sg-{:08x}", 0xffffff00u32)
-                        }
-                    ];
-                }
                 let mut created_nics = Vec::new();
                 if in_json.has_key("SubnetId") {
                     if in_json.has_key("Nics") {
@@ -2881,6 +2873,17 @@ impl RicCall {
                             vm["Nics"].push(nic.clone()).unwrap();
                         }
                     }
+                }
+                if in_json.has_key("SecurityGroupIds") || in_json.has_key("SecurityGroups") {
+                    add_security_group!(in_json, req_id, vm);
+                } else if vm.has_key("NetId") {
+                    let sg = main_json[user_id]["SecurityGroups"].members().find(|sg| sg["NetId"] == vm["NetId"] && sg["SecurityGroupName"] == "default").unwrap().clone();
+                    vm["SecurityGroups"] = json::array![
+                        json::object!{
+                            "SecurityGroupName": sg["SecurityGroupName"].clone(),
+                            "SecurityGroupId": sg["SecurityGroupId"].clone()
+                        }
+                    ];
                 }
                 for nic in created_nics {
                     main_json[user_id]["Nics"].push(nic).unwrap();
