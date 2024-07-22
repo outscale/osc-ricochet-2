@@ -407,6 +407,34 @@ impl RicCall {
             }
         }
 
+        macro_rules! create_security_group {
+            ($net_id:expr, $sg_name:expr, $description:expr) => {{
+                let sg_id = format!("sg-{:08x}", req_id);
+                let mut sg = json::object!{
+                    Tags: json::array!{},
+                    SecurityGroupId: sg_id,
+                    AccountId: format!("{:012x}", user_id),
+                    OutboundRules: json::array!{},
+                    InboundRules: json::array!{},
+                    SecurityGroupName: $sg_name,
+                    Description: $description,
+                };
+
+                if let Some(id) = $net_id {
+                    sg["NetId"] = id;
+                    sg["OutboundRules"].push(json::object!{
+                        "FromPortRange": -1,
+                        "IpProtocol": "-1",
+                        "ToPortRange": -1,
+                        "IpRanges": [
+                            "0.0.0.0/0"
+                        ]
+                    }).unwrap();
+                }
+                sg
+            }}
+        }
+
         macro_rules! filters_check {
             ( $in_json:expr, $obj:expr, $type:expr, $( $filer_id:ident, $resource_id:ident ),* ) => {
                 if $in_json.has_key("Filters") {
@@ -2646,33 +2674,20 @@ impl RicCall {
             }
             RicCall::CreateSecurityGroup => {
                 check_aksk_auth!(auth);
-                let sg_id = format!("sg-{:08x}", req_id);
                 let in_json = require_in_json!(bytes);
-                let mut sg = json::object!{
-                    Tags: json::array!{},
-                    SecurityGroupId: sg_id,
-                    AccountId: format!("{:012x}", user_id),
-                    OutboundRules: json::array!{},
-                    InboundRules: json::array!{},
-                    SecurityGroupName: require_arg!(in_json, "SecurityGroupName"),
-                    Description: require_arg!(in_json, "Description"),
-                };
 
+                let sg_name = require_arg!(in_json, "SecurityGroupName");
+                let description = require_arg!(in_json, "Description");
+                let net_id =
                 if in_json.has_key("NetId") {
-                    let net_id = in_json["NetId"].clone();
-                    match get_by_id!("Nets", "NetId", net_id) {
-                        Ok(_) => sg["NetId"] = net_id,
-                        _ => return bad_argument(req_id, json, "NetId doesn't corespond to a net id")
+                    if get_by_id!("Nets", "NetId", in_json["NetId"].clone()).is_err() {
+                        return bad_argument(req_id, json, "NetId doesn't corespond to a net id")
                     }
-                    sg["OutboundRules"].push(json::object!{
-                        "FromPortRange": -1,
-                        "IpProtocol": "-1",
-                        "ToPortRange": -1,
-                        "IpRanges": [
-                            "0.0.0.0/0"
-                        ]
-                    }).unwrap();
-                }
+                    Some(in_json["NetId"].clone())
+                } else {
+                    None
+                };
+                let sg = create_security_group!(net_id, sg_name, description);
 
                 main_json[user_id]["SecurityGroups"].push(
                     sg.clone()).unwrap();
