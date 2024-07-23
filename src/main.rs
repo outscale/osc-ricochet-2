@@ -1789,14 +1789,16 @@ impl RicCall {
                 let net_id = require_arg!(in_json, "NetId");
 
                 let net_idx = get_by_id!("Nets", "NetId", net_id);
-                let user_iwgs = &mut main_json[user_id]["InternetServices"];
-                let iwg = match user_iwgs.members_mut().find(|iwg| id == iwg["InternetServiceId"]) {
-                    Some(iwg) => iwg,
+                let igw = match get_by_id!("InternetServices", "InternetServiceId", id) {
+                    Ok((t, idx)) => &mut main_json[user_id][t][idx],
                     _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
                 };
 
                 match net_idx {
-                    Ok(_) => {iwg["NetId"] = net_id},
+                    Ok(_) => {
+                        igw["NetId"] = net_id;
+                        igw["State"] = "available".into()
+                    },
                     _ => return bad_argument(req_id, json, "Net not found")
                 };
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
@@ -1895,16 +1897,18 @@ impl RicCall {
                 let net_id = require_arg!(in_json, "NetId");
 
                 let net_idx = get_by_id!("Nets", "NetId", net_id);
-                let user_iwgs = &mut main_json[user_id]["InternetServices"];
-                let iwg = match user_iwgs.members_mut().find(|iwg| id == iwg["InternetServiceId"]) {
-                    Some(iwg) => iwg,
+                let igw = match get_by_id!("InternetServices", "InternetServiceId", id) {
+                    Ok((t, idx)) => &mut main_json[user_id][t][idx],
                     _ => return bad_argument(req_id, json, "SecurityGroupId doesn't corespond to an existing id")
                 };
-
                 match net_idx {
-                    Ok(_) => {iwg.remove("NetId")},
+                    Ok(_) => {
+                        igw.remove("NetId");
+                        igw.remove("State");
+                    },
                     _ => return bad_argument(req_id, json, "Net not found")
                 };
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteInternetService => {
