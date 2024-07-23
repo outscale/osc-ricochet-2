@@ -593,6 +593,7 @@ impl RicCall {
                     DeviceNumber: $device_number,
                     "LinkNicId": format!("eni-attach-{:08x}", id)
                 };
+                $nic["State"] = "in-use".into();
             }};
         }
 
@@ -3478,6 +3479,7 @@ impl RicCall {
             let (vm_idx, nic_idx) = get_vm_niclink_idx().unwrap();
             // When no more Nics are linked to a VM the Nics object stored inside the VM needs to be deleted
             if main_json[user_id]["Vms"][vm_idx]["Nics"].len() == 1 { 
+                main_json[user_id]["Nics"][nic_idx]["State"] = "available".into();
                 main_json[user_id]["Vms"][vm_idx].remove("Nics"); 
             }
             else {
