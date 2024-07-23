@@ -3373,18 +3373,7 @@ impl RicCall {
                 NetId: require_arg!(in_json, "NetId"),
                 ServiceName: require_arg!(in_json, "ServiceName")
             };
-            if in_json.has_key("RouteTableIds") {
-                let mut route_table_ids = json::array!();
-                for rt_id in in_json["RouteTableIds"].members() {
-                    match get_by_id!("RouteTables", "RouteTableId", *rt_id) {
-                        Ok(_) if !route_table_ids.contains(rt_id.clone()) => route_table_ids.push(rt_id.clone()).unwrap(),
-                        Err(_) => return bad_argument(req_id, json, format!("can't find route table {}", rt_id).as_str()),
-                        _ => return bad_argument(req_id, json, "route tables ids need to be exclusive")
-                    }
-                }
-                net_access_point["RouteTableIds"] = route_table_ids.clone();
-            }
-
+            
             if main_json[user_id]["NetAccessPoints"].members().any(|net_ap| net_ap["NetId"] == net_access_point["NetId"] && net_ap["ServiceName"] == net_access_point["ServiceName"]) {
                 return bad_argument(req_id, json, format!("Net is already linked to the service `{}`", net_access_point["ServiceName"]).as_str());
             }
@@ -3392,11 +3381,32 @@ impl RicCall {
             let service_format = format!("com.outscale.{}.", region);
             match net_access_point["ServiceName"].as_str().unwrap().strip_prefix(service_format.as_str()) {
                 Some (rest) => {
-                    if rest.trim().contains(".") || rest.trim().len() == 0 {
+                    if rest.trim().contains('.') || rest.trim().is_empty() {
                         return bad_argument(req_id, json, format!("the service should be in the format `com.outscale.region.service`, your region being `{}`", region).as_str())
                     }
                 },
                 None => return bad_argument(req_id, json, format!("the service should be in the format `com.outscale.region.service`, your region being `{}`", region).as_str())
+            }
+            if in_json.has_key("RouteTableIds") {
+                let mut route_table_ids = json::array!();
+                for rt_id in in_json["RouteTableIds"].members() {
+                    match get_by_id!("RouteTables", "RouteTableId", *rt_id) {
+                        Ok((t, rt_idx)) if !route_table_ids.contains(rt_id.clone()) => {
+                            route_table_ids.push(rt_id.clone()).unwrap();
+                            // TODO Add DestinationServiceId (depends on NetAccessPointServices)
+                            main_json[user_id][t][rt_idx]["Routes"].push(
+                                json::object!{
+                                    NetAccessPointId: net_access_point["NetAccessPointId"].clone(),
+                                    CreationMethod: "CreateRoute",
+                                    State: "active"
+                                }
+                            ).unwrap();
+                        },
+                        Err(_) => return bad_argument(req_id, json, format!("can't find route table {}", rt_id).as_str()),
+                        _ => return bad_argument(req_id, json, "route tables ids need to be exclusive")
+                    }
+                }
+                net_access_point["RouteTableIds"] = route_table_ids.clone();
             }
 
             main_json[user_id]["NetAccessPoints"].push(net_access_point.clone()).unwrap();
