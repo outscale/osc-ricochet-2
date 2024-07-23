@@ -982,10 +982,20 @@ impl RicCall {
             },
             RicCall::CreateLoadBalancer => {
                 check_aksk_auth!(auth);
+                let in_json = require_in_json!(bytes);
+
                 let mut lb = json::object!{
+                    Tags: optional_arg!(in_json, "Tags", json::array!()),
+                    SourceSecurityGroup: json::object!{
+                        SecurityGroupAccountId: "unknow",
+                        SecurityGroupName: "unknow"
+                    },
+                    SecuredCookies: false,
+                    Subnets: optional_arg!(in_json, "Subnets", json::array!()),
                     ApplicationStickyCookiePolicies: json::array![],
                     BackendVmIds: json::array![],
-                    LoadBalancerType:"internet-facing",
+                    SecurityGroups: optional_arg!(in_json, "SecurityGroups", json::array!{}),
+                    LoadBalancerType: optional_arg!(in_json, "LoadBalancerType", "internet-facing"),
                     DnsName: "unimplemented",
                     HealthCheck: json::object!{
                         UnhealthyThreshold:2,
@@ -999,73 +1009,86 @@ impl RicCall {
                         PublicationInterval:60,
                         IsEnabled:false
                     },
-                    LoadBalancerStickyCookiePolicies: json::array![]
+                    LoadBalancerStickyCookiePolicies: json::array![],
+                    SubregionNames: optional_arg!(in_json, "SubregionNames", json::array!(get_default_subregion(&cfg))),
+                    Listeners: require_arg!(in_json, "Listeners"),
+                    LoadBalancerName: require_arg!(in_json, "LoadBalancerName")
                 };
-                match json::parse(std::str::from_utf8(&bytes).unwrap()) {
-                    Ok(in_json) => {
-                        if in_json.has_key("SubregionNames") {
-                            lb["SubregionNames"] = in_json["SubregionNames"].clone();
-                        } else {
-                            lb["SubregionNames"] = json::array![get_default_subregion(&cfg)];
-                        }
+                check_conflict!(LoadBalancer, lb["LoadBalancerName"], json);
 
-                        if in_json.has_key("PublicIp") {
-                            match main_json[user_id]["PublicIps"].members().
-                                find(|ip| in_json["PublicIp"] == ip["PublicIp"]) {
-                                    Some(_) => {},
-                                    _ => return bad_argument(
-                                        req_id, json, "PublicIp doesn't corespond to an existing Ip")
+                if lb["LoadBalancerType"] != "internet-facing" && lb["LoadBalancerType"] != "internal" {
+                    return bad_argument(req_id, json, "Type of load balancer must be internet-facing or internal")
+                }
+                for l in lb["Listeners"].members_mut() {
+                    require_arg!(l, "BackendPort");
+                    l["BackendProtocol"] = optional_arg!(l, "BackendProtocol", l["LoadBalancerProtocol"].clone());
+                    require_arg!(l, "LoadBalancerPort");
+                    require_arg!(l, "LoadBalancerProtocol");
+                }
+                if in_json.has_key("Subnets") {
+                    let mut net_id = "";
+                    if lb["Subnets"].len() > 1 {
+                        return bad_argument(req_id, json, "Multiple Subnets not implemented in oapi yet, hence not implemented in ricochet-2")
+                    }
+                    for subnet in lb["Subnets"].members() {
+                        match get_by_id!("Subnets", "SubnetId", *subnet) {
+                            Ok((t, idx))  => {
+                                let curr_net = main_json[user_id][t][idx]["NetId"].as_str().unwrap(); 
+                                if net_id.is_empty() {
+                                    net_id = curr_net;
+                                } else if curr_net != net_id {
+                                    return bad_argument(req_id, json, "Subnets must be in the same net");
                                 }
-
-                            lb["PublicIp"] = in_json["PublicIp"].clone();
+                            },
+                            Err(_) => return bad_argument(req_id, json, format!("Subnet {} not found", subnet).as_str())
                         }
-
-                        if in_json.has_key("Tags") {
-                            lb["Tags"] = in_json["Tags"].clone();
-                        } else {
-                            lb["Tags"] = json::array![];
+                    }
+                    lb["NetId"] = net_id.into();
+                }
+                if in_json.has_key("SecurityGroups") {
+                    if lb["Subnets"].is_empty() {
+                        return bad_argument(req_id, json, "SecurityGroups requires a Net")
+                    }
+                    for sg in lb["SecurityGroups"].members() {
+                        if get_by_id!("SecurityGroups", "SecurityGroupId", *sg).is_err() {
+                            return bad_argument(req_id, json, format!("Security Group {} not found", sg).as_str())
                         }
-
-                        if in_json.has_key("Subnets") {
-                            lb["Subnets"] = in_json["Subnets"].clone();
-                        } else {
-                            lb["Subnets"] = json::array![];
-                        }
-
-                        if in_json.has_key("LoadBalancerName") {
-                            let name = in_json["LoadBalancerName"].to_string();
-                            check_conflict!(LoadBalancer, name, json);
-                            lb["LoadBalancerName"] = json::JsonValue::String(name);
-                        } else {
-                            return bad_argument(req_id, json, "LoadBalancerName missing")
-                        }
-
-                        if in_json.has_key("Listeners") {
-                            let mut listeners = in_json["Listeners"].clone();
-                            for l in listeners.members_mut() {
-                                if !l.has_key("LoadBalancerProtocol") {
-                                    return bad_argument(req_id, json, "Listener require LoadBalancerProtocol");
-                                }
-
-                                if !l.has_key("BackendProtocol") {
-                                    l["BackendProtocol"] = l["LoadBalancerProtocol"].clone();
-                                }
-                            }
-
-                            lb["Listeners"] = listeners;
-                        } else {
-                            return bad_argument(req_id, json, "Listeners missing")
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalid JSON format, or no input")
                     }
                 }
-                lb["SourceSecurityGroup"] = json::object!{
-                    SecurityGroupAccountId: "unknow",
-                    SecurityGroupName: "unknow"
-                };
-                lb["SecuredCookies"] = json::JsonValue::Boolean(false);
+                else if !lb["Subnets"].is_empty() {
+                    let sg = main_json[user_id]["SecurityGroups"].members().find(|sg| 
+                        sg["NetId"] == lb["NetId"] && sg["SecurityGroupName"] == "default"
+                    ).unwrap();
+                    lb["SecurityGroups"].push(sg["SecurityGroupId"].clone()).unwrap();
+                }
+                if in_json.has_key("PublicIp") {
+                    if lb["LoadBalancerType"] != "internet-facing" {
+                        return bad_argument(req_id, json, "Public IP should be specified with an internet-facing's LBU");
+                    }
+                    if !in_json.has_key("Subnets") {
+                        return bad_argument(req_id, json, "An internet-facing's LBU needs the Subnets parameter");
+                    }
+                    lb["PublicIp"] = in_json["PublicIp"].clone();
+                    let subnet_idx = get_by_id!("Subnets", "SubnetId", lb["Subnets"][0]).unwrap().1;
+                    let subnet_st: Ipv4Net = main_json[user_id]["Subnets"][subnet_idx]["IpRange"].as_str().unwrap().parse().unwrap();
+                    let used_ips = used_ips_of_subnet!(&main_json[user_id]["Subnets"][subnet_idx]["SubnetId"]);
+                    let private_ip = match subnet_st.hosts().find(|ip| !used_ips.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())) {
+                        Some(pip) => pip,
+                        _ => return bad_argument(req_id, json, "all private ips used")
+                    };
+                    main_json[user_id]["Subnets"][subnet_idx]["AvailableIpsCount"] = (main_json[user_id]["Subnets"][subnet_idx]["AvailableIpsCount"].as_usize().unwrap() - 1).into();
+
+                    let pip = match get_by_id!("PublicIps", "PublicIp", in_json["PublicIp"]) {
+                        Ok((t, idx)) => &mut main_json[user_id][t][idx],
+                        Err(_) => return bad_argument(req_id, json, "PublicIp doesn't correspond to an existing Ip")
+                    };
+                    // TODO When creating an LBU: VmId, NicId and NicAccountId are added to link but not owned by the user. Owned by Outscale services ?
+                    pip["VmId"] = "i-xxxxxxxx".into();
+                    pip["NicId"] = "eni-xxxxxxxx".into();
+                    pip["NicAccountId"] = "xxxxxxxxxxxx".into(); 
+                    pip["LinkPublicIpId"] = format!("eipassoc-{:08x}", req_id).into();
+                    pip["PrivateIp"] = private_ip.to_string().into();
+                }
 
                 main_json[user_id]["LoadBalancers"].push(
                     lb.clone()).unwrap();
