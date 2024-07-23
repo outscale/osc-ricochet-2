@@ -613,8 +613,8 @@ impl RicCall {
         macro_rules! create_nic {
             ($in_json:expr) => {{
                 let subnet_id = require_arg!($in_json, "SubnetId");
-                let subnet = match get_by_id!("Subnets", "SubnetId", subnet_id) {
-                    Ok((_, idx)) => &main_json[user_id]["Subnets"][idx],
+                let (subnet, subnet_idx) = match get_by_id!("Subnets", "SubnetId", subnet_id) {
+                    Ok((t, idx)) => (&main_json[user_id][t][idx], idx),
                     _ => return bad_argument(req_id, json, format!("can't find subnet id {}", subnet_id).as_str())
                 };
                 let nic_id: u32 = thread_rng().gen();
@@ -635,7 +635,7 @@ impl RicCall {
                 };
 
                 let subnet_st: Ipv4Net = subnet["IpRange"].as_str().unwrap().parse().unwrap();
-                let mut used_ips = used_ips_of_subnet!(&subnet_id);
+                let used_ips = used_ips_of_subnet!(&subnet_id);
                 let mut has_primary_in_req = false;
                 if $in_json.has_key("PrivateIps") {
                     let mut private_ips = json::array!();
@@ -680,13 +680,9 @@ impl RicCall {
                     nic["PrivateIps"] = private_ips.clone();
                 }
                 if !has_primary_in_req {
-                    used_ips = used_ips_of_subnet!(&subnet_id);
                     let mut used_ips_req = json::array!();
-                    for pip in nic["PrivateIps"].members() {
-                        used_ips_req.push(pip["PrivateIp"].clone()).unwrap();
-                    }
-                    let mut hosts = subnet_st.hosts();
-                    let private_ip = match hosts.find(|ip| !used_ips.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())
+                    nic["PrivateIps"].members().for_each(|pip| used_ips_req.push(pip["PrivateIp"].clone()).unwrap());
+                    let private_ip = match subnet_st.hosts().find(|ip| !used_ips.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())
                                                       && !used_ips_req.members().any(|used_ip| used_ip.as_str().unwrap() == ip.to_string())) {
                         Some(pip) => pip,
                         _ => return bad_argument(req_id, json, "all private ips used")
@@ -702,6 +698,7 @@ impl RicCall {
                 if $in_json.has_key("SecurityGroupIds")  {
                     add_security_group!($in_json, req_id, nic);
                 }
+                main_json[user_id]["Subnets"][subnet_idx]["AvailableIpsCount"] = (main_json[user_id]["Subnets"][subnet_idx]["AvailableIpsCount"].as_usize().unwrap() - nic["PrivateIps"].len()).into();
                 nic
             }};
         }
