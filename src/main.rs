@@ -631,8 +631,6 @@ impl RicCall {
                     }
                 }
 
-                json["Vms"] = (*user_vms).clone();
-
                 if !bytes.is_empty() {
                     let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
                     match in_json {
@@ -666,6 +664,8 @@ impl RicCall {
                             return bad_argument(req_id, json, "Invalide json");
                         }
                     }
+                } else {
+                    json["Vms"] = (*user_vms).clone();
                 }
 
                 for i in rm_array {
