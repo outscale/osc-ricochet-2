@@ -1165,7 +1165,7 @@ impl RicCall {
                 let user_iets = &mut main_json[user_id]["ImageExportTasks"];
 
                 for iet in user_iets.members_mut() {
-                    let mut progress: u32 = iet["Progress"].as_u32().unwrap() + 10;
+                    let mut progress: u32 = iet["Progress"].as_u32().unwrap() + 34;
                     if iet["State"] == "pending/queued" {
                         iet["State"] = "pending".into();
                     }
