@@ -610,7 +610,7 @@ impl RicCall {
                 }
             }};
         }
-        
+
         macro_rules! create_nic {
             ($in_json:expr) => {{
                 let subnet_id = require_arg!($in_json, "SubnetId");
@@ -798,6 +798,8 @@ impl RicCall {
                                         json["Vms"].push((*vm).clone()).unwrap();
                                     }
                                 }
+                            } else {
+                                json["Vms"] = (*user_vms).clone()
                             }
                         },
                         Err(_) => {
@@ -817,6 +819,7 @@ impl RicCall {
                     }
                     main_json[user_id]["Vms"].array_remove(i);
                 }
+                logln!("vms", "out", "ReadVms out: z{:#}", json.dump());
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::StopVms => {
