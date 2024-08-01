@@ -42,7 +42,7 @@ fn jsonobj_to_strret(mut json: json::JsonValue, req_id: usize) -> String {
     json::stringify_pretty(json, 3)
 }
 
-fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
+fn have_request_filter(filter: & json::JsonValue, resource: & json::JsonValue,
                        lookfor: & str, src: & str, old: bool) -> bool {
     if !old {
         return false;
@@ -98,15 +98,30 @@ fn have_request_filter(filter: & json::JsonValue, vm: & json::JsonValue,
         }
         false
     }
+    let nested_resources: Vec<&str> = src.split('.').collect();
 
-    if filter.has_key(lookfor) {
-
-        for l in filter[lookfor].members() {
-            if vm.has_key(src) && comp_filter(&vm[src], l) {
-                return true;
+    fn nested_comp_filter(i: usize, nested_resources: &Vec<&str>, resource: &JsonValue, needle: &JsonValue) -> bool {
+        if i == nested_resources.len() - 1 {
+            match nested_resources[i] {
+                "*" => todo!("Tags are received as a=b but stored as {{Key:a, Value:b}}"),
+                el => comp_filter(&resource[el], needle)
+            }
+        } else {
+            match nested_resources[i] {
+                "*" => resource.members().any(|el| nested_comp_filter(i + 1, nested_resources, el, needle)),
+                el => nested_comp_filter(i + 1, nested_resources, &resource[el], needle)
             }
         }
-        false
+    }
+    if filter.has_key(lookfor) {
+        if filter[lookfor].is_array() {
+            for l in filter[lookfor].members() {
+                if nested_comp_filter(0, &nested_resources, resource, l) {
+                    return true
+                }
+            }
+        }
+        nested_comp_filter(0, &nested_resources, resource, &filter[lookfor])
     } else {
         true
     }
@@ -435,8 +450,8 @@ impl RicCall {
             }}
         }
 
-        macro_rules! filters_check {
-            ( $in_json:expr, $obj:expr, $type:expr, $( $filer_id:ident, $resource_id:ident ),* ) => {
+        macro_rules! filters_check_2 {
+            ( $in_json:expr, $obj:expr, $type:expr, $( ($filter_id:ident, $resource_id:expr)),* ) => {
                 if $in_json.has_key("Filters") {
                     let filters = &$in_json["Filters"];
                     if !filters.is_object() {
@@ -447,8 +462,8 @@ impl RicCall {
                         let mut need_add = true;
 
                         $(
-                            need_add = have_request_filter(filters, o, stringify!($filer_id),
-                                                           stringify!($resource_id), need_add);
+                            need_add = have_request_filter(filters, o, stringify!($filter_id),
+                                                           $resource_id, need_add);
                         )*
 
                         if need_add {
@@ -458,6 +473,12 @@ impl RicCall {
                 } else {
                     json[$type] = (*$obj).clone();
                 }
+            }
+        }
+
+        macro_rules! filters_check {
+            ( $in_json:expr, $obj:expr, $type:expr, $( ($filter_id:ident, $resource_id:expr)),* ) => {
+                filters_check_2!($in_json, $obj, $type, (Tags, "Tags.*"), (TagValues, "Tags.*.Value"), (TagKeys, "Tags.*.Key"), $( ($filter_id, $resource_id)),* )
             }
         }
 
@@ -772,40 +793,9 @@ impl RicCall {
                 }
 
                 if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            logln!("vms", "in", "{:#}", in_json.dump());
-                            if in_json.has_key("Filters") {
-                                let filter = &in_json["Filters"];
-
-                                if !filter.is_object() {
-                                    return bad_argument(req_id, json, "Filter must be an object")
-                                }
-
-                                json["Vms"] = json::JsonValue::new_array();
-
-                                for vm in user_vms.members() {
-                                    let mut need_add = true;
-
-                                    need_add = have_request_filter(filter, vm,
-                                                                   "VmIds", "VmId", need_add);
-                                    need_add = have_request_filter(filter, vm,
-                                                                   "TagValues", "VmType", need_add);
-                                    need_add = have_request_filter(filter, vm,
-                                                                   "TagKeys", "VmId", need_add);
-                                    if need_add {
-                                        json["Vms"].push((*vm).clone()).unwrap();
-                                    }
-                                }
-                            } else {
-                                json["Vms"] = (*user_vms).clone()
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
-                    }
+                    let in_json = require_in_json!(bytes);
+                    logln!("vms", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, user_vms, "Vms", (VmIds, "VmId"), (NetIds, "NetId"));
                 } else {
                     json["Vms"] = (*user_vms).clone();
                 }
@@ -1180,21 +1170,8 @@ impl RicCall {
 
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
-                    let filter = &in_json["Filters"];
-
-                    json["ImageExportTasks"] = json::JsonValue::new_array();
-
-                    for snap in user_iets.members() {
-                        let mut need_add = true;
-
-                        need_add = have_request_filter(filter, snap,
-                                                       "TaskIds",
-                                                       "TaskId", need_add);
-                        if need_add {
-                            json["ImageExportTasks"].push((*snap).clone()).unwrap();
-                        }
-                    }
-
+                    logln!("images", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, user_iets, "ImageExportTasks", (TaskIds, "TaskId"));
                 } else {
                     json["ImageExportTasks"] = (*user_iets).clone();
                 }
@@ -1401,7 +1378,13 @@ impl RicCall {
 
                 let user_dl = &main_json[user_id]["NatServices"];
 
-                json["NatServices"] = (*user_dl).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    logln!("natservices", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, user_dl, "NatServices", (NetIds, "NetId"));
+                } else {
+                    json["NatServices"] = (*user_dl).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
 
@@ -1461,21 +1444,8 @@ impl RicCall {
 
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
-                    let filter = &in_json["Filters"];
-
-                    json["Snapshots"] = json::JsonValue::new_array();
-
-                    for snap in snapshots.members() {
-                        let mut need_add = true;
-
-                        need_add = have_request_filter(filter, snap,
-                                                       "SnapshotIds",
-                                                       "SnapshotId", need_add);
-                        if need_add {
-                            json["Snapshots"].push((*snap).clone()).unwrap();
-                        }
-                    }
-
+                    logln!("snapshots", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, snapshots, "Snapshots", (SnapshotIds, "SnapshotId"));
                 } else {
                     json["Snapshots"] = (*snapshots).clone();
                 }
@@ -1779,7 +1749,7 @@ impl RicCall {
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
                     filters_check!(in_json, &old_cgs, "ClientGateways",
-                                   ClientGatewayIds, ClientGatewayId);
+                                   (ClientGatewayIds, "ClientGatewayId"));
                 } else {
                     json["ClientGateways"] = old_cgs;
                 }
@@ -1965,7 +1935,7 @@ impl RicCall {
                     let in_json = require_in_json!(bytes);
                     logln!("nets", "in", "{:#}", in_json.dump());
 
-                    filters_check!(in_json, user_nets, "Nets", NetIds, NetId);
+                    filters_check!(in_json, user_nets, "Nets", (NetIds, "NetId"));
                 } else {
                     json["Nets"] = (*user_nets).clone();
                 }
@@ -2101,43 +2071,9 @@ impl RicCall {
                 }
 
                 if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalid JSON format")
-                        },
-                        Ok(in_json) => {
-                            logln!("images", "in", "{:#}", in_json.dump());
-
-                            if in_json.has_key("Filters") {
-                                let filters = &in_json["Filters"];
-                                if !filters.is_object() {
-                                    return bad_argument(req_id, json, "Filter must be an object :p")
-                                }
-                                json["Images"] = json::array!{};
-                                for img in user_imgs.members() {
-                                    let mut need_add = true;
-
-                                    need_add = have_request_filter(filters, img,
-                                                                   "ImageNames",
-                                                                   "ImageName", need_add);
-
-                                    need_add = have_request_filter(filters, img,
-                                                                   "ImageIds",
-                                                                   "ImageId", need_add);
-
-                                    need_add = have_request_filter(filters, img,
-                                                                   "AccountAliases",
-                                                                   "AccountAlias", need_add);
-                                    if need_add {
-                                        json["Images"].push((*img).clone()).unwrap();
-                                    }
-                                }
-                            } else {
-                                json["Images"] = (*user_imgs).clone();
-                            }
-                        }
-                    }
+                    let in_json = require_in_json!(bytes);
+                    logln!("images", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, user_imgs, "Images", (ImageNames, "ImageName"), (ImageIds, "ImageId"), (AccountAliases, "AccountAlias"));
                 } else {
                     json["Images"] = (*user_imgs).clone();
                 }
@@ -2151,25 +2087,7 @@ impl RicCall {
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
                     logln!("securitygroups", "in", "{:#}", in_json.dump());
-                    if in_json.has_key("Filters") {
-                        let filters = &in_json["Filters"];
-                        json["SecurityGroups"] = json::JsonValue::new_array();
-                        for sg in user_sgs.members() {
-                            let mut need_add = true;
-
-                            need_add = have_request_filter(filters, sg,
-                                                           "SecurityGroupNames",
-                                                           "SecurityGroupName", need_add);
-                            need_add = have_request_filter(filters, sg,
-                                                           "SecurityGroupIds",
-                                                           "SecurityGroupId", need_add);
-                            if need_add {
-                                json["SecurityGroups"].push((*sg).clone()).unwrap();
-                            }
-                        }
-                    } else {
-                        json["SecurityGroups"] = (*user_sgs).clone();
-                    }
+                    filters_check!(in_json, user_sgs, "SecurityGroups", (NetIds, "NetId"), (SecurityGroupNames, "SecurityGroupName"), (SecurityGroupIds, "SecurityGroupId"));
                 } else {
                     json["SecurityGroups"] = (*user_sgs).clone();
                 }
@@ -2297,8 +2215,13 @@ impl RicCall {
                 check_aksk_auth!(auth);
 
                 let user_rts = &main_json[user_id]["RouteTables"];
-
-                json["RouteTables"] = (*user_rts).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    logln!("routetables", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, user_rts, "RouteTables", (NetIds, "NetId"), (LinkRouteTableMain, "LinkRouteTables.*.Main"));
+                } else {
+                    json["RouteTables"] = (*user_rts).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -2306,45 +2229,41 @@ impl RicCall {
                 check_aksk_auth!(auth);
 
                 let user_rts = &main_json[user_id]["Subnets"];
-
-                json["Subnets"] = (*user_rts).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    logln!("subnets", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, user_rts, "Subnets", (NetIds, "NetId"));
+                } else {
+                    json["Subnets"] = (*user_rts).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadInternetServices  => {
                 check_aksk_auth!(auth);
 
-                let user_imgs = &main_json[user_id]["InternetServices"];
-
-                json["InternetServices"] = (*user_imgs).clone();
+                let user_is = &main_json[user_id]["InternetServices"];
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    logln!("internetservices", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, user_is, "InternetServices", (LinkNetIds, "InternetServices.NetId"));
+                } else {
+                    json["InternetServices"] = (*user_is).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadPublicIps  => {
                 check_aksk_auth!(auth);
 
-                let user_imgs = &main_json[user_id]["PublicIps"];
+                let public_ips = &mut main_json[user_id]["PublicIps"];
 
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
-                    let filter = &in_json["Filters"];
-                    let public_ips = &mut main_json[user_id]["PublicIps"];
-
-                    json["PublicIps"] = json::JsonValue::new_array();
-
-                    for snap in public_ips.members() {
-                        let mut need_add = true;
-
-                        need_add = have_request_filter(filter, snap,
-                                                       "PublicIpIds",
-                                                       "PublicIpId", need_add);
-                        if need_add {
-                            json["PublicIps"].push((*snap).clone()).unwrap();
-                        }
-                    }
-
+                    logln!("publicips", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, public_ips, "PublicIps", (PublicIpIds, "PublicIpId"), (PublicIps, "PublicIp"));
                 } else {
-                    json["PublicIps"] = (*user_imgs).clone();
+                    json["PublicIps"] = (*public_ips).clone();
                 }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
@@ -2391,35 +2310,16 @@ impl RicCall {
             },
             RicCall::ReadVolumes  => {
                 check_aksk_auth!(auth);
-                let user_imgs = &mut main_json[user_id]["Volumes"];
-                json["Volumes"] = (*user_imgs).clone();
+                let volumes = &mut main_json[user_id]["Volumes"];
+                
                 if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-
-                            logln!("volumes", "in", "{:#}", in_json.dump());
-                            let filter = &in_json["Filters"];
-
-                            json["Volumes"] = json::JsonValue::new_array();
-
-                            for vol in user_imgs.members() {
-                                let mut need_add = true;
-
-                                need_add = have_request_filter(filter, vol,
-                                                               "VolumeIds",
-                                                               "VolumeId", need_add);
-                                if need_add {
-                                    json["Volumes"].push((*vol).clone()).unwrap();
-                                }
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalid JSON format")
-                        }
-                    }
+                    let in_json = require_in_json!(bytes);
+                    logln!("volumes", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, volumes, "Volumes", (VolumeIds, "VolumeId"));
+                } else {
+                    json["Volumes"] = (*volumes).clone();
                 }
-                update_state(user_imgs, |vol| vol["State"] == "creating", "available");
+                update_state(volumes, |vol| vol["State"] == "creating", "available");
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -2455,13 +2355,11 @@ impl RicCall {
 
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
-                    filters_check!(in_json, user_fgpus, "FlexibleGpus",
-                                   FlexibleGpuIds, FlexibleGpuId);
-
+                    filters_check!(in_json, user_fgpus, "FlexibleGpus", (FlexibleGpuIds, "FlexibleGpuId"));
                 } else {
                     json["FlexibleGpus"] = (*user_fgpus).clone();
-
                 }
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadApiAccessPolicy => {
@@ -3075,8 +2973,13 @@ impl RicCall {
                 check_aksk_auth!(auth);
 
                 let nics = &main_json[user_id]["Nics"];
-
-                json["Nics"] = (*nics).clone();
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    logln!("nics", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, nics, "Nics", (NetIds, "NetId"));
+                } else {
+                    json["Nics"] = (*nics).clone();
+                }
 
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
@@ -3174,8 +3077,14 @@ impl RicCall {
                 check_aksk_auth!(auth);
 
                 let net_peerings = &main_json[user_id]["NetPeerings"];
+                if !bytes.is_empty() {
+                    let in_json = require_in_json!(bytes);
+                    logln!("netpeerings", "in", "{:#}", in_json.dump());
+                    filters_check!(in_json, net_peerings, "NetPeerings", (SourceNetNetIds, "SourceNet.NetId"), (AccepterNetNetIds, "AccepterNet.NetId"));
+                } else {
+                    json["NetPeerings"] = (*net_peerings).clone();
+                }
 
-                json["NetPeerings"] = (*net_peerings).clone();
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::AcceptNetPeering => {
@@ -3298,8 +3207,14 @@ impl RicCall {
             check_aksk_auth!(auth);
 
             let virtual_gateways = &main_json[user_id]["VirtualGateways"];
+            if !bytes.is_empty() {
+                let in_json = require_in_json!(bytes);
+                logln!("virtualgateways", "in", "{:#}", in_json.dump());
+                filters_check!(in_json, virtual_gateways, "VirtualGateways", (LinkNetIds, "NetToVirtualGatewayLinks.*.NetId"));
+            } else {
+                json["VirtualGateways"] = (*virtual_gateways).clone();
+            }
 
-            json["VirtualGateways"] = (*virtual_gateways).clone();
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::LinkVirtualGateway => {
@@ -3435,8 +3350,14 @@ impl RicCall {
             check_aksk_auth!(auth);
 
             let net_access_points = &main_json[user_id]["NetAccessPoints"];
+            if !bytes.is_empty() {
+                let in_json = require_in_json!(bytes);
+                logln!("netaccesspoints", "in", "{:#}", in_json.dump());
+                filters_check!(in_json, net_access_points, "NetAccessPoints", (NetIds, "NetId"));
+            } else {
+                json["NetAccessPoints"] = (*net_access_points).clone();
+            }
 
-            json["NetAccessPoints"] = (*net_access_points).clone();
             Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
         },
         RicCall::LinkNic => {
