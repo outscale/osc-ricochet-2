@@ -2249,7 +2249,7 @@ impl RicCall {
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
                     logln!("internetservices", "in", "{:#}", in_json.dump());
-                    filters_check!(in_json, user_is, "InternetServices", (LinkNetIds, "InternetServices.NetId"));
+                    filters_check!(in_json, user_is, "InternetServices", (LinkNetIds, "NetId"));
                 } else {
                     json["InternetServices"] = (*user_is).clone();
                 }
