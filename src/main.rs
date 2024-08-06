@@ -915,25 +915,26 @@ impl RicCall {
             },
             RicCall::DeleteLoadBalancer  => {
                 check_aksk_auth!(auth);
-                let user_lbu = &mut main_json[user_id]["LoadBalancers"];
+                let in_json = require_in_json!(bytes);
+                let lb_name = require_arg!(in_json, "LoadBalancerName");
+                let (lb_idx, lb) = match get_by_id!("LoadBalancers", "LoadBalancerName", lb_name) {
+                    Ok((t, idx))  => (idx, &mut main_json[user_id][t][idx]),
+                    Err(_) => return bad_argument(req_id, json, format!("LoadBalancer `{}` not found", lb_name).as_str())
+                };
 
-                if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            if in_json.has_key("LoadBalancerName") {
-                                let id = &in_json["LoadBalancerName"];
-
-                                array_remove!(user_lbu, |lbu| *id == lbu["LoadBalancerName"]);
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
-                    }
-                } else {
-                    return bad_argument(req_id, json, "Invalide json");
+                if lb.has_key("PublicIp") {
+                    let lbu_pip = lb["PublicIp"].clone();
+                    let pips = &mut main_json[user_id]["PublicIps"];
+                    if let Some(ip_idx) = pips.members().position(|pip| pip["PublicIp"] == lbu_pip) {
+                        pips[ip_idx].remove("VmId");
+                        pips[ip_idx].remove("NicId");
+                        pips[ip_idx].remove("NicAccountId");
+                        pips[ip_idx].remove("PrivateIp");
+                        pips[ip_idx].remove("LinkPublicIpId");
+                    } 
                 }
+                main_json[user_id]["LoadBalancers"].array_remove(lb_idx);
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteKeypair  => {
