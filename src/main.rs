@@ -1910,6 +1910,9 @@ impl RicCall {
                 // TODO: check net is destroyable
                 let id = require_arg!(in_json, "NetId");
                 update_state(user_nets, |n| n["NetId"] == id, "deleting");
+                let sgs = &mut main_json[user_id]["SecurityGroups"];
+                array_remove!(sgs, |sg| sg["NetId"] == id && sg["SecurityGroupName"] == "default");
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::ReadKeypairs => {
