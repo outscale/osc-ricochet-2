@@ -1665,7 +1665,7 @@ impl RicCall {
                     return bad_argument(req_id, json, "The Subnet and the route table must be in the same Net.")
                 }
                 let link_route_table = json::object!{
-                    Main: route_table["LinkRouteTables"].is_empty(),
+                    Main: false,
                     LinkRouteTableId: format!("rtbassoc-{:08x}", req_id),
                     RouteTableId: route_table["RouteTableId"].clone(),
                     NetId: subnet_net_id.clone()
