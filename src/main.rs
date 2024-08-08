@@ -819,7 +819,7 @@ impl RicCall {
                 let user_vms = &mut main_json[user_id]["Vms"];
                 let mut vms_ret = json::JsonValue::new_array();
 
-                for (_, vm) in user_vms.members_mut().enumerate() {
+                for vm in user_vms.members_mut() {
                     for id in ids.members() {
                         if *id == vm["VmId"] {
                             let mut new_state = "stopping";
@@ -851,7 +851,7 @@ impl RicCall {
                 let user_vms = &mut main_json[user_id]["Vms"];
                 let mut vms_ret = json::JsonValue::new_array();
 
-                for (_, vm) in user_vms.members_mut().enumerate() {
+                for vm in user_vms.members_mut() {
                     for id in ids.members() {
                         if *id == vm["VmId"] {
                             let mut new_state = "pending";
@@ -873,44 +873,30 @@ impl RicCall {
             },
             RicCall::DeleteVms  => {
                 check_aksk_auth!(auth);
+                let in_json = require_in_json!(bytes);
+                let vms_ids = require_arg!(in_json, "VmIds");
+                logln!("vms", "in", "{:#}", in_json.dump());
+
+                json["Vms"] = JsonValue::new_array();
                 let user_vms = &mut main_json[user_id]["Vms"];
+                for vm in user_vms.members_mut() {
+                    let mut need_rm = false;
 
-                json["Vms"] = (*user_vms).clone();
-
-                if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            // need refacto using user_vms.members().filter(FIND and do json["Vms"].push((*vm)).for_each(REMOVE)
-                            logln!("vms", "in", "{:#}", in_json.dump());
-                            if in_json.has_key("VmIds") {
-                                let ids = &in_json["VmIds"];
-
-                                json["Vms"] = json::JsonValue::new_array();
-                                for vm in user_vms.members_mut() {
-                                    let mut need_rm = true;
-
-                                    for id in ids.members() {
-                                        if *id == vm["VmId"] {
-                                            if vm["DeletionProtection"] == true {
-                                                return bad(req_id, json, "", 8018,
-                                                           "OperationNotSupported");
-                                            }
-                                            need_rm = true;
-                                        }
-                                    }
-                                    if need_rm {
-                                        vm["State"] = "terminated".into();
-                                        json["Vms"].push((*vm).clone()).unwrap();
-                                    }
-                                }
+                    for id in vms_ids.members() {
+                        if *id == vm["VmId"] {
+                            if vm["DeletionProtection"] == true {
+                                return bad(req_id, json, "", 8018,
+                                           "OperationNotSupported");
                             }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
+                            need_rm = true;
                         }
                     }
+                    if need_rm {
+                        vm["State"] = "terminated".into();
+                        json["Vms"].push((*vm).clone()).unwrap();
+                    }
                 }
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::DeleteLoadBalancer  => {
@@ -939,37 +925,12 @@ impl RicCall {
             },
             RicCall::DeleteKeypair  => {
                 check_aksk_auth!(auth);
+                let in_json = require_in_json!(bytes);
                 let user_kps = &mut main_json[user_id]["Keypairs"];
+                let keypair_name = require_arg!(in_json, "KeypairName");
 
-                if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            if in_json.has_key("KeypairName") {
-                                let name = &in_json["KeypairName"];
-
-                                let mut idx = 0;
-                                let mut rm = false;
-                                // can be refacto using array_remove!
-                                for vm in user_kps.members() {
-                                    if *name == vm["KeypairName"] {
-                                        rm = true;
-                                        break;
-                                    }
-                                    idx += 1;
-                                }
-                                if rm {
-                                    user_kps.array_remove(idx);
-                                }
-                            } else {
-                                return bad_argument(req_id, json, "KeypairName Missing")
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
-                    }
-                }
+                array_remove!(user_kps, |keypair| keypair["KeypairName"] == keypair_name);
+                
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateLoadBalancer => {
@@ -1185,10 +1146,9 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
                 logln!("images", "in", "{:#}", in_json.dump());
                 let img_id = require_arg!(in_json, "ImageId");
-                match main_json[user_id]["Images"].members().find(|img| img["ImageId"] == img_id) {
-                    Some(_) => {}
-                    _ => return bad_argument(req_id, json, "Can't find ImageId")
-                };
+                if get_by_id!("Images", "ImageId", img_id).is_err() {
+                    return bad_argument(req_id, json, "Can't find ImageId")
+                }
 
                 // {"ImageId":"ami-00000001","OsuExport":{"DiskImageFormat":"qcow2","OsuBucket":"test-image-name-9159339220693928153","OsuManifestUrl":"","OsuPrefix":""}}
                 let osu_export = require_arg!(in_json, "OsuExport");
@@ -1211,14 +1171,13 @@ impl RicCall {
             },
             RicCall::CreateImage => {
                 check_aksk_auth!(auth);
-                let image_id = format!("ami-{:08x}", req_id);
                 let mut image = json::object!{
                     AccountId: format!("{:012x}", user_id),
 		    PermissionsToLaunch: {
 			GlobalPermission: false,
 			AccountIds: []
 		    },
-                    ImageId: image_id,
+                    ImageId: format!("ami-{:08x}", req_id),
 		    "StateComment": {},
 		    State: "pending",
 		    "RootDeviceType": "bsu",
@@ -1248,26 +1207,19 @@ impl RicCall {
                 if !users[user_id]["login"].is_null() {
                     image["AccountAlias"] = users[user_id]["login"].clone()
                 } else {
-		    image["AccountAlias"] = "unknow".into()
- 		}
-
+                    image["AccountAlias"] = "unknow".into()
+                }
                 if !bytes.is_empty() {
-                    let in_json = json::parse(std::str::from_utf8(&bytes).unwrap());
-                    match in_json {
-                        Ok(in_json) => {
-                            logln!("images", "in", "{:#}", in_json.dump());
-                            if in_json.has_key("ImageName") {
-                                image["ImageName"] = in_json["ImageName"].clone();
-                            }
-                            if in_json.has_key("Description") {
-                                image["Description"] = in_json["Description"].clone();
-                            }
-                        },
-                        Err(_) => {
-                            return bad_argument(req_id, json, "Invalide json");
-                        }
+                    let in_json = require_in_json!(bytes);
+                    logln!("images", "in", "{:#}", in_json.dump());
+                    if in_json.has_key("ImageName") {
+                        image["ImageName"] = in_json["ImageName"].clone();
+                    }
+                    if in_json.has_key("Description") {
+                        image["Description"] = in_json["Description"].clone();
                     }
                 }
+                
                 main_json[user_id]["Images"].push(
                     image.clone()).unwrap();
                 json["Image"] = image;
@@ -1851,7 +1803,7 @@ impl RicCall {
                     let vm_id = user["LinkPublicIps"][link_idx]["VmIp"].clone();
                     if let Some(vm_idx) = user["Vms"].members().position(|vm| vm_id == vm["VmId"] ) {
                         let mut rng = thread_rng();
-                        user["Vms"][vm_idx]["PublicIp"] = Ipv4Addr::from(rng.gen_range(0..std::u32::MAX)).to_string().into();
+                        user["Vms"][vm_idx]["PublicIp"] = Ipv4Addr::from(rng.gen_range(0..u32::MAX)).to_string().into();
                     }
 
                     if let Some(ip_idx) = user["PublicIps"].members().position(|pip| ip_id == pip["PublicIpId"] ) {
@@ -2375,58 +2327,42 @@ impl RicCall {
             },
             RicCall::CreateKeypair => {
                 check_aksk_auth!(auth);
-                let mut kp = json::object!{};
-                match json::parse(std::str::from_utf8(&bytes).unwrap()) {
-                    Ok(in_json) => {
-                        if in_json.has_key("KeypairName") {
-                            let name = in_json["KeypairName"].to_string();
-                            check_conflict!(Keypair, name, json);
-                            kp["KeypairName"] = json::JsonValue::String(name);
+                let in_json = require_in_json!(bytes);
+                let mut kp = json::object!{
+                    KeypairName: require_arg!(in_json, "KeypairName")
+                };
+                check_conflict!(Keypair, kp["KeypairName"], json);
 
-                            let rsa = Rsa::generate(4096).unwrap();
-                            let private_key = rsa.clone().private_key_to_der().unwrap();
-                            let pkey = PKey::from_rsa(rsa).unwrap();
-                            let pkey_ref = pkey.deref();
-                            let mut x509builder = X509Builder::new().unwrap();
-                            match x509builder.set_pubkey(pkey_ref) {
-                                Ok(()) => (),
-                                _ => {
-                                    return serv_error(req_id, json, "fail to generate fingerprint (0)")
-                                }
-                            }
-                            match x509builder.sign(pkey_ref, MessageDigest::md5()) {
-                                Ok(()) => (),
-                                _ => {
-                                    return serv_error(req_id, json, "fail to generate fingerprint (1)")
-                                }
-                            }
-                            let x509 = x509builder.build();
-
-                            let digest = x509.digest(MessageDigest::md5()).unwrap();
-                            let mut digest_str = String::with_capacity(3 * digest.len());
-                            let mut first_byte = true;
-                            #[allow(clippy::unnecessary_to_owned)]
-                            for byte in digest.to_vec() {
-                                if !first_byte {
-                                    write!(digest_str, ":").unwrap();
-                                }
-                                write!(digest_str, "{:02x}", byte).unwrap();
-                                first_byte = false;
-                            }
-                            kp["KeypairFingerprint"] = json::JsonValue::String(digest_str);
-
-                            let private_pem = Pem::new("PRIVATE KEY", private_key);
-                            let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
-
-                            kp["PrivateKey"] = json::JsonValue::String(private);
-                        } else {
-                            return bad_argument(req_id, json, "KeypairName Missing")
-                        }
-                    },
-                    Err(_) => {
-                        return bad_argument(req_id, json, "Invalid JSON format")
-                    }
+                let rsa = Rsa::generate(4096).unwrap();
+                let private_key = rsa.clone().private_key_to_der().unwrap();
+                let pkey = PKey::from_rsa(rsa).unwrap();
+                let pkey_ref = pkey.deref();
+                let mut x509builder = X509Builder::new().unwrap();
+                if x509builder.set_pubkey(pkey_ref).is_err() {
+                    return serv_error(req_id, json, "fail to generate fingerprint (0)")
                 }
+                if x509builder.sign(pkey_ref, MessageDigest::md5()).is_err() {
+                    return serv_error(req_id, json, "fail to generate fingerprint (1)")
+                }
+                let x509 = x509builder.build();
+
+                let digest = x509.digest(MessageDigest::md5()).unwrap();
+                let mut digest_str = String::with_capacity(3 * digest.len());
+                let mut first_byte = true;
+                #[allow(clippy::unnecessary_to_owned)]
+                for byte in digest.to_vec() {
+                    if !first_byte {
+                        write!(digest_str, ":").unwrap();
+                    }
+                    write!(digest_str, "{:02x}", byte).unwrap();
+                    first_byte = false;
+                }
+                kp["KeypairFingerprint"] = digest_str.into();
+
+                let private_pem = Pem::new("PRIVATE KEY", private_key);
+                let private = encode_config(&private_pem, EncodeConfig { line_ending: LineEnding::LF });
+                kp["PrivateKey"] = private.into();
+
                 main_json[user_id]["Keypairs"].push(
                     kp.clone()).unwrap();
                 json["Keypair"] = kp;
@@ -2528,7 +2464,7 @@ impl RicCall {
                 let eip = json::object!{
                     PublicIpId: format!("eipalloc-{:08x}", req_id),
                     Tags: json::array!{},
-                    PublicIp: Ipv4Addr::from(rng.gen_range(0..std::u32::MAX)).to_string()
+                    PublicIp: Ipv4Addr::from(rng.gen_range(0..u32::MAX)).to_string()
                 };
 
                 main_json[user_id]["PublicIps"].push(
@@ -4020,7 +3956,7 @@ async fn main() {
             NetAccessPoints: json::JsonValue::new_array(),
         }).unwrap();
     }
-    let tls = matches!(cfg["tls"] == true, true);
+    let tls = cfg["tls"] == true;
     let connection = Mutex::new(connection);
     let connection = Arc::new(connection);
     let cfg = Arc::new(Mutex::new(cfg));
