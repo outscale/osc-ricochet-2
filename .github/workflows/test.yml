@@ -24,3 +24,13 @@ jobs:
       uses: actions/setup-python@v2
     - name: osc-cli local tests
       run: ./scripts/osc-cli-tests.sh
+  osc-sdk-c-tests:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v2
+    - name: install dependancies
+      run: |
+        sudo apt-get update --fix-missing
+        sudo apt-get install -y -f -o Acquire::Retries=3 jq libjson-c-dev libcurl4-openssl-dev pkg-config libjsoncpp-dev
+    - name: osc-sdk-c local tests
+      run: ./scripts/osc-sdk-c-tests.sh
