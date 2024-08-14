@@ -34,3 +34,13 @@ jobs:
         sudo apt-get install -y -f -o Acquire::Retries=3 jq libjson-c-dev libcurl4-openssl-dev pkg-config libjsoncpp-dev
     - name: osc-sdk-c local tests
       run: ./scripts/osc-sdk-c-tests.sh
+  osc-sdk-go-tests:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.19
+      - name: osc-sdk-go local tests
+        run: ./scripts/osc-sdk-go-tests.sh
