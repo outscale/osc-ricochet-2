@@ -64,3 +64,16 @@ jobs:
         components: rustfmt
     - name: osc-sdk-rust local tests
       run: ./scripts/osc-sdk-rust-tests.sh
+  osc-sdk-js-tests:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 20.5.1
+    - name: make nvm available
+      run: |
+        sudo cp ~/.nvm/nvm.sh /usr/local/bin/nvm
+        sudo chmod +x /usr/local/bin/nvm
+    - name: osc-sdk-js local tests
+      run: ./scripts/osc-sdk-js-tests.sh
