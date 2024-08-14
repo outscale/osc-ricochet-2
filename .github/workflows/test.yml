@@ -52,3 +52,15 @@ jobs:
       uses: actions/setup-python@v2
     - name: osc-sdk-python local tests
       run: ./scripts/osc-sdk-python-tests.sh
+  osc-sdk-rust-tests:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+    - name: Stable Rust with rustfmt
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: rustfmt
+    - name: osc-sdk-rust local tests
+      run: ./scripts/osc-sdk-rust-tests.sh
