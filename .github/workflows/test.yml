@@ -77,3 +77,21 @@ jobs:
         sudo chmod +x /usr/local/bin/nvm
     - name: osc-sdk-js local tests
       run: ./scripts/osc-sdk-js-tests.sh
+  osc-sdk-java-tests:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+        with:
+          repository: outscale/osc-sdk-java
+          path: osc-sdk-java
+      - name: Copy xml Java setup
+        run: |
+          sudo cp osc-sdk-java/pom.xml .
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin' 
+          java-version: '11'
+          cache: 'maven'
+      - name: osc-sdk-java local tests
+        run: ./scripts/osc-sdk-java-tests.sh
