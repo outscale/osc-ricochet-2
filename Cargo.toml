@@ -8,6 +8,7 @@ overflow-checks = false
 
 [package]
 name = "ricochet-2"
+license = "BSD-3-Clause"
 version = "0.1.0"
 authors = ["Matthias Gatto <matthias.gatto@outscale.com>"]
 edition = "2021"
