@@ -19,7 +19,7 @@ jobs:
       - name: install dependancies
         run: |
           sudo apt-get update --fix-missing
-          sudo apt-get install -y -f -o pkg-config libssl-dev
+          sudo apt-get install -y -f -o Acquire::Retries=3 pkg-config libssl-dev
       - uses: actions/checkout@master
       - name: Compile and release
         uses: rust-build/rust-build.action@v1.4.4
