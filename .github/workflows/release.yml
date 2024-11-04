@@ -24,6 +24,6 @@ jobs:
         with:
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
-          PRE_BUILD: "pre_build.sh"
+          PRE_BUILD: "pre-build.sh"
           EXTRA_FILES: "README.md LICENSE ricochet-ssl.json ricochet-headarches.json ricochet-oapi-cli.json ricochet.json"
 
