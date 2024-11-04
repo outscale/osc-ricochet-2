@@ -917,7 +917,7 @@ impl RicCall {
                         pips[ip_idx].remove("NicAccountId");
                         pips[ip_idx].remove("PrivateIp");
                         pips[ip_idx].remove("LinkPublicIpId");
-                    } 
+                    }
                 }
                 main_json[user_id]["LoadBalancers"].array_remove(lb_idx);
 
@@ -930,7 +930,6 @@ impl RicCall {
                 let keypair_name = require_arg!(in_json, "KeypairName");
 
                 array_remove!(user_kps, |keypair| keypair["KeypairName"] == keypair_name);
-                
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateLoadBalancer => {
