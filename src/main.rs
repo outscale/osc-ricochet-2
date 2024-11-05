@@ -450,8 +450,8 @@ impl RicCall {
             }}
         }
 
-        macro_rules! filters_check_2 {
-            ( $in_json:expr, $obj:expr, $type:expr, $( ($filter_id:ident, $resource_id:expr)),* ) => {
+        macro_rules! filters_do_2 {
+            ( $in_json:expr, $obj:expr, $type:expr, $todo:expr, $( ($filter_id:ident, $resource_id:expr)),* ) => {
                 if $in_json.has_key("Filters") {
                     let filters = &$in_json["Filters"];
                     if !filters.is_object() {
@@ -467,12 +467,25 @@ impl RicCall {
                         )*
 
                         if need_add {
+                            $todo(o);
                             json[$type].push((*o).clone()).unwrap();
                         }
                     }
                 } else {
                     json[$type] = (*$obj).clone();
                 }
+            }
+        }
+
+        macro_rules! filters_do {
+            ( $in_json:expr, $obj:expr, $type:expr, $todo:expr, $( ($filter_id:ident, $resource_id:expr)),* ) => {
+                filters_do_2!($in_json, $obj, $type, $todo, (Tags, "Tags.*"), (TagValues, "Tags.*.Value"), (TagKeys, "Tags.*.Key"), $( ($filter_id, $resource_id)),* )
+            }
+        }
+
+        macro_rules! filters_check_2 {
+            ( $in_json:expr, $obj:expr, $type:expr, $( ($filter_id:ident, $resource_id:expr)),* ) => {
+                filters_do_2!($in_json, $obj, $type, |_u|{}, $( ($filter_id, $resource_id)),*)
             }
         }
 
@@ -985,7 +998,7 @@ impl RicCall {
                     for subnet in lb["Subnets"].members() {
                         match get_by_id!("Subnets", "SubnetId", *subnet) {
                             Ok((t, idx))  => {
-                                let curr_net = main_json[user_id][t][idx]["NetId"].as_str().unwrap(); 
+                                let curr_net = main_json[user_id][t][idx]["NetId"].as_str().unwrap();
                                 if net_id.is_empty() {
                                     net_id = curr_net;
                                 } else if curr_net != net_id {
@@ -1218,7 +1231,7 @@ impl RicCall {
                         image["Description"] = in_json["Description"].clone();
                     }
                 }
-                
+
                 main_json[user_id]["Images"].push(
                     image.clone()).unwrap();
                 json["Image"] = image;
@@ -1254,8 +1267,8 @@ impl RicCall {
                         let snet_st : Ipv4Net = snet["IpRange"].as_str().unwrap().parse().unwrap();
                         if snet_st.contains(&subnet_st) || subnet_st.contains(&snet_st) {
                             return bad_argument(req_id, json, "Subnets IP range must not overlap")
-                        } 
-                    } 
+                        }
+                    }
                 }
                 subnet["AvailableIpsCount"] = hosts_of_netmask(subnet_st.prefix_len()).into();
 
@@ -1694,15 +1707,20 @@ impl RicCall {
 
                 let old_cgs = main_json[user_id]["ClientGateways"].clone();
                 let user_cgs = &mut main_json[user_id]["ClientGateways"];
-                array_remove_3!(in_json, req_id, user_cgs, |n| n["State"] == "deleted", {});
-
-                update_state(user_cgs, |cg| cg["State"] == "deleting", "deleted");
 
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
-                    filters_check!(in_json, &old_cgs, "ClientGateways",
-                                   (ClientGatewayIds, "ClientGatewayId"));
+                    filters_do!(in_json, &old_cgs, "ClientGateways",
+                                  |o: & json::JsonValue | { array_remove_3!(in_json, req_id, user_cgs,
+                                                                            |n| n["ClientGatewayId"] == o["ClientGatewayId"] &&
+                                                                            n["State"] == "deleted", {}) ;
+                                                            update_state(user_cgs, |cg|  cg["ClientGatewayId"] == o["ClientGatewayId"] &&
+                                                                         cg["State"] == "deleting", "deleted")
+},
+                                (ClientGatewayIds, "ClientGatewayId"));
                 } else {
+                    array_remove_3!(in_json, req_id, user_cgs, |n| n["State"] == "deleted", {});
+                    update_state(user_cgs, |cg| cg["State"] == "deleting", "deleted");
                     json["ClientGateways"] = old_cgs;
                 }
 		Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
@@ -1946,7 +1964,7 @@ impl RicCall {
                 json["Regions"] = json::array![
                     json::object!{
                         Endpoint: "127.0.0.1:3000",
-                        RegionName: get_region(&cfg) 
+                        RegionName: get_region(&cfg)
                     }
                 ];
 
@@ -2266,7 +2284,7 @@ impl RicCall {
             RicCall::ReadVolumes  => {
                 check_aksk_auth!(auth);
                 let volumes = &mut main_json[user_id]["Volumes"];
-                
+
                 if !bytes.is_empty() {
                     let in_json = require_in_json!(bytes);
                     logln!("volumes", "in", "{:#}", in_json.dump());
