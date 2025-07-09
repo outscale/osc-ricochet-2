@@ -584,6 +584,27 @@ impl RicCall {
             }}
         }
 
+        macro_rules! require_arg_any {
+            ($in_json:expr, $($arg:expr),*) => {{
+                let mut result = None;
+                $(
+                    if result.is_none() {
+                        if $in_json.has_key($arg) {
+                            result = Some(($arg, $in_json[$arg].clone()));
+                        }
+                    }
+                )*
+                match result {
+                    Some(value) => value,
+                    None => {
+                        let required_args = vec![$($arg),*];
+                        let required_str = required_args.join(", ");
+                        return bad_argument(req_id, $in_json, format!("one of [{}] required", required_str).as_str())
+                    }
+                }
+            }};
+        }
+
         macro_rules! require_arg_2 {
             ($json:expr, $req_id:expr, $in_json:expr, $arg:expr) => {{
                 match $in_json.has_key($arg) {
@@ -940,9 +961,10 @@ impl RicCall {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let user_kps = &mut main_json[user_id]["Keypairs"];
-                let keypair_name = require_arg!(in_json, "KeypairName");
 
-                array_remove!(user_kps, |keypair| keypair["KeypairName"] == keypair_name);
+                let (key, value) = require_arg_any!(in_json, "KeypairName", "KeypairId");
+                array_remove!(user_kps, |keypair| keypair[key] == value);
+
                 Ok((jsonobj_to_strret(json, req_id), StatusCode::OK))
             },
             RicCall::CreateLoadBalancer => {
@@ -2346,7 +2368,8 @@ impl RicCall {
                 check_aksk_auth!(auth);
                 let in_json = require_in_json!(bytes);
                 let mut kp = json::object!{
-                    KeypairName: require_arg!(in_json, "KeypairName")
+                    KeypairName: require_arg!(in_json, "KeypairName"),
+                    KeypairId: format!("key-{:>32}", req_id).replace(' ', "0"),
                 };
                 check_conflict!(Keypair, kp["KeypairName"], json);
 
