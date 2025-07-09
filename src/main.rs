@@ -2369,7 +2369,7 @@ impl RicCall {
                 let in_json = require_in_json!(bytes);
                 let mut kp = json::object!{
                     KeypairName: require_arg!(in_json, "KeypairName"),
-                    KeypairId: format!("key-{:>32}", req_id).replace(' ', "0"),
+                    KeypairId: format!("key-{:0>32}", req_id),
                 };
                 check_conflict!(Keypair, kp["KeypairName"], json);
 
