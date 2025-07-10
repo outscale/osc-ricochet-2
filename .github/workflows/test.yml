@@ -7,7 +7,7 @@ on:
 
 jobs:
   oapi-cli-tests:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
     - name: install dependancies
@@ -17,15 +17,17 @@ jobs:
     - name: oapi-cli local tests 
       run: ./scripts/oapi-cli-tests.sh
   osc-cli-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python
       uses: actions/setup-python@v2
+      with: 
+        python-version: '3.12' 
     - name: osc-cli local tests
       run: ./scripts/osc-cli-tests.sh
   osc-sdk-c-tests:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v2
     - name: install dependancies
@@ -35,17 +37,17 @@ jobs:
     - name: osc-sdk-c local tests
       run: ./scripts/osc-sdk-c-tests.sh
   osc-sdk-go-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v2
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.19
+          go-version: 1.23
       - name: osc-sdk-go local tests
         run: ./scripts/osc-sdk-go-tests.sh
   osc-sdk-python-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python
@@ -53,7 +55,7 @@ jobs:
     - name: osc-sdk-python local tests
       run: ./scripts/osc-sdk-python-tests.sh
   osc-sdk-rust-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v2
     - name: Stable Rust with rustfmt
@@ -65,7 +67,7 @@ jobs:
     - name: osc-sdk-rust local tests
       run: ./scripts/osc-sdk-rust-tests.sh
   osc-sdk-js-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-node@v3
@@ -78,7 +80,7 @@ jobs:
     - name: osc-sdk-js local tests
       run: ./scripts/osc-sdk-js-tests.sh
   osc-sdk-java-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v3
       - uses: actions/checkout@v3
