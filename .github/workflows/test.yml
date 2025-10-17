@@ -1,15 +1,15 @@
 name: tests
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ main, master ]
   push:
-    branches: [ master ]
+    branches: [ main, master ]
 
 jobs:
   oapi-cli-tests:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: install dependancies
       run: |
         sudo apt-get update --fix-missing
@@ -19,7 +19,7 @@ jobs:
   osc-cli-tests:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Set up Python
       uses: actions/setup-python@v2
       with: 
@@ -29,7 +29,7 @@ jobs:
   osc-sdk-c-tests:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: install dependancies
       run: |
         sudo apt-get update --fix-missing
@@ -39,7 +39,7 @@ jobs:
   osc-sdk-go-tests:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v5
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
@@ -49,7 +49,7 @@ jobs:
   osc-sdk-python-tests:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Set up Python
       uses: actions/setup-python@v2
     - name: osc-sdk-python local tests
@@ -57,7 +57,7 @@ jobs:
   osc-sdk-rust-tests:
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: Stable Rust with rustfmt
       uses: actions-rs/toolchain@v1
       with:
