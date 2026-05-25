@@ -8,8 +8,10 @@ on:
 jobs:
   oapi-cli-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: install dependancies
       run: |
         sudo apt-get update --fix-missing
@@ -18,8 +20,10 @@ jobs:
       run: ./scripts/oapi-cli-tests.sh
   osc-cli-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Set up Python
       uses: actions/setup-python@v2
       with: 
@@ -28,8 +32,10 @@ jobs:
       run: ./scripts/osc-cli-tests.sh
   osc-sdk-c-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: install dependancies
       run: |
         sudo apt-get update --fix-missing
@@ -38,38 +44,45 @@ jobs:
       run: ./scripts/osc-sdk-c-tests.sh
   osc-sdk-go-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.23
+          go-version: 1.26
       - name: osc-sdk-go local tests
         run: ./scripts/osc-sdk-go-tests.sh
   osc-sdk-python-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Set up Python
       uses: actions/setup-python@v2
     - name: osc-sdk-python local tests
       run: ./scripts/osc-sdk-python-tests.sh
   osc-sdk-rust-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Stable Rust with rustfmt
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
       with:
-        profile: minimal
         toolchain: stable
         components: rustfmt
     - name: osc-sdk-rust local tests
       run: ./scripts/osc-sdk-rust-tests.sh
   osc-sdk-js-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
     - uses: actions/setup-node@v3
       with:
         node-version: 20.5.1
@@ -81,9 +94,10 @@ jobs:
       run: ./scripts/osc-sdk-js-tests.sh
   osc-sdk-java-tests:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           repository: outscale/osc-sdk-java
           path: osc-sdk-java
