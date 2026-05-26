@@ -26,6 +26,6 @@ pem = "2.0.1"
 openssl = { version = "0.10.68", features = ["vendored"] }
 xml2json-rs = "1.0.1"
 simple-hyper-server-tls = { version = "0.3.2", features = ["tls-openssl"]}
-rand = "0.8.5"
+rand = "0.10.0"
 structured-logger = "1.0.5"
 log = "0.4.29"
