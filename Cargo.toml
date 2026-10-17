@@ -17,7 +17,7 @@ edition = "2021"
 hyper = { version = "0.14", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 ipnet = "2.7.2"
-sha2 = "0.10.6"
+sha2 = "0.11.0"
 futures = "0.3"
 json = "0.12.4"
 base64 = "0.21.0"
